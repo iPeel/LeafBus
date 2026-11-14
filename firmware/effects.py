@@ -726,6 +726,13 @@ class Engine:
         self.fade = fade
         self.last = None
 
+    def release(self, n):
+        """Drop the effect and its geometry (to free memory before a new
+        layout is computed); restart() brings the same effect back. Until
+        then nothing is painted and the context is a plain chain of n."""
+        self.eff = None
+        self.ctx = Ctx(n)
+
     def restart(self, now, fade=5, ctx=None):
         """Same effect again, e.g. after power-on or a new layout."""
         if ctx is not None:

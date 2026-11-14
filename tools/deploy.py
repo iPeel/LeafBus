@@ -29,6 +29,7 @@ import os
 import shutil
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import time
 
@@ -43,10 +44,19 @@ FLASH_OFFSET = '0x1000'      # original ESP32: bootloader, partitions, app
 def tool(name):
     exe = shutil.which(name)
     if not exe:
-        here = os.path.dirname(sys.executable)
-        for cand in (os.path.join(here, name), os.path.join(here, name + '.exe')):
-            if os.path.exists(cand):
-                return cand
+        # next to this Python, or in the user scripts folder of
+        # pip install --user (the Windows Store Python puts them there)
+        dirs = [os.path.dirname(sys.executable)]
+        for scheme in (None, os.name + '_user'):
+            try:
+                dirs.append(sysconfig.get_path('scripts', scheme) if scheme else
+                            sysconfig.get_path('scripts'))
+            except KeyError:
+                pass
+        for d in dirs:
+            for cand in (os.path.join(d, name), os.path.join(d, name + '.exe')):
+                if os.path.exists(cand):
+                    return cand
         sys.exit('deploy: %s not found; pip install %s' % (name, name))
     return exe
 

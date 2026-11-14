@@ -1,0 +1,11 @@
+# LeafBus ESP-IDF settings, applied after the stock ESP32_GENERIC ones.
+#
+# Deliberately empty: the network settings tried with 26 panels made things
+# worse, so ESP-IDF's defaults stay.
+#   TCP_SND_BUF / TCP_WND 5760 -> 2880, no AMPDU TX, fewer Wi-Fi buffers:
+#     9 kB more free heap, but transfers slowed: 12-14 failed requests under
+#     heavy load (stock: 3-7)
+#   STATIC_RX_BUFFER_NUM 10 -> 6, RX_BA_WIN 6 -> 4, DYNAMIC_RX/TX 32 -> 16:
+#     select() failed with EIO even under light load
+#   ESP_WIFI_SOFTAP_SUPPORT=n: saves ~1 kB (136 B static), and the board can
+#     no longer open its set-up access point; not worth it

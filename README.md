@@ -39,7 +39,8 @@ sequence you can reproduce in an afternoon.
 
 ## Hardware
 
-- Nanoleaf Shapes panels with their own power supply (42 V). Verified with 13 Mini Triangles and one Triangle.
+- Nanoleaf Shapes panels with their own power supply (42 V). Verified with 13 Mini Triangles and one Triangle, and
+  with assemblies of 20 and 26 Triangles and Mini Triangles.
 - ESP32 (original, e.g. ESP32-D0WD; the S2/S3/C3 need a different GPIO register base, see `firmware/panelbus.py`).
 - One resistor, 1–2 kΩ.
 - Something to reach the panel's DATA and GND pads: a spare linker with wires soldered on, or pogo pins.
@@ -53,11 +54,16 @@ sets the pad mode itself.
 
 ## Quick start
 
-1. Build the LeafBus firmware image — MicroPython v1.29 with the LeafBus modules frozen in (Linux or WSL, no root;
-   the first run fetches ESP-IDF and its toolchain, ~3 GB, later builds take a minute):
+1. Build the LeafBus firmware image — MicroPython v1.29 with the LeafBus modules frozen in (no root / admin rights;
+   the first run fetches ESP-IDF and its toolchain, ~3–4 GB, later builds take a minute or two). On Linux or WSL:
    ```
    tools/build_firmware.sh
    ```
+   On Windows, natively (from PowerShell or cmd, not Git Bash; needs git and Python on PATH):
+   ```
+   powershell -ExecutionPolicy Bypass -File tools\build_firmware.ps1
+   ```
+   Both build the board in `firmware/board/LEAFBUS` and patch MicroPython first (`tools/patch_micropython.py`).
 2. Connect the ESP32 by USB and install (`pip install -r requirements-dev.txt` first):
    ```
    python tools/deploy.py --flash
@@ -83,10 +89,29 @@ sets the pad mode itself.
 **Why a custom image.** A plain ESP32 (no PSRAM) has roughly 200 kB of RAM for MicroPython, Wi-Fi and TCP together.
 Copied as files, the LeafBus modules take ~70 kB of it as bytecode; MicroPython's heap then grows into the memory
 the network stack needs, and the web server stalls for minutes at a time while the lights carry on. Frozen into the
-image, the code runs from flash: measured on a board, the network keeps ~80 kB instead of 0–22 kB and every request
-is answered in 0.1–0.2 s. On stock MicroPython, `python tools/deploy.py` (without `--flash`) still installs the
-modules as precompiled `.mpy` files — fine for the lights and touch, unreliable for the web interface unless the
-board has PSRAM.
+image, the code runs from flash and every request is answered in 0.1–0.2 s. On stock MicroPython,
+`python tools/deploy.py` (without `--flash`) still installs the modules as precompiled `.mpy` files — fine for the
+lights and touch, unreliable for the web interface unless the board has PSRAM. Even a single large module such as
+`app.mpy` copied onto the filesystem of a board running the image leaves too little memory for Wi-Fi to start.
+
+**Memory on a plain ESP32.** MicroPython and Wi-Fi / TCP share ~200 kB. Stock MicroPython starts with a 56 kB heap,
+grows it into the ESP-IDF heap whenever a collection cannot satisfy an allocation and gives areas back once they are
+empty. Wi-Fi and lwIP fill freed memory with queued packets at once; when Python takes it back the network starves —
+sends block, `select()` fails (EIO), with large assemblies the station can even drop off. The LeafBus image
+(`firmware/board/LEAFBUS`, `tools/patch_micropython.py`) fixes the split instead: the Python heap grows once, while
+the app starts, to 112 kB and keeps it; it never grows into the last 32 kB of free ESP-IDF memory. Measured with 26
+panels, against stock MicroPython:
+
+| | stock | LeafBus image |
+|---|---|---|
+| a request every 0.5 s, all endpoints, 170 s | 3–14 failed | 0 failed |
+| rescans (`POST /api/layout/rescan`), idle / under load | 6/10, 5/10 | 10/10, 10/10 |
+
+Smaller lwIP and Wi-Fi buffers, and an ESP-IDF without SoftAP, were tried and are not used (reasons in
+`firmware/board/LEAFBUS/sdkconfig.leafbus`). The app helps itself, too: a rescan frees the old layout before
+computing the new one, and a momentary lack of network memory is waited out instead of counted as an error
+(`net_starved` in `/api/info`). `"debug": true` and `/api/info` (`idf_heap`: free, largest block, lowest ever) show
+the margin.
 
 **Developing.** Files on the board's filesystem take precedence over frozen modules: to try a change without
 rebuilding, upload just that module (`mpy-cross -march=xtensawin firmware/web.py`, then
@@ -228,7 +253,9 @@ anim.rainbow(bus)
 | `PROTOCOL.md`      | the protocol specification                                                                                                                                                                                                                    |
 | `firmware/`        | MicroPython for the ESP32: `panelbus.py` bus driver, `geometry.py` layout string → tree and coordinates, `effects.py` effects engine, `app.py` + `main.py` application (startup, touch, schedule), `web.py` HTTP server and API, `www/index.html` web UI, `wifi.py`, `ddp.py` / `e131.py` receivers, `config.py`, `anim.py` REPL demos |
 | `tools/leafbus.py` | host tool, talks to the board over IP: `layout`, `identify`, `send`, `rainbow`                                                                                                                                                            |
-| `tools/build_firmware.sh` | MicroPython image with the LeafBus modules frozen in (`firmware/manifest.py`)                                                                                                                                     |
+| `tools/build_firmware.sh` / `.ps1` | MicroPython image with the LeafBus modules frozen in (`firmware/manifest.py`): Linux / WSL, or Windows natively |
+| `firmware/board/LEAFBUS/` | the board the image is built for: ESP32_GENERIC with a fixed RAM split between Python and Wi-Fi |
+| `tools/patch_micropython.py` | patches applied to MicroPython before the build: heap reserve, kept heap areas, optional SoftAP, Windows build host |
 | `tools/deploy.py`  | flash the image and/or upload files over USB (settings kept)                                                                                                                                                                              |
 | `tools/simulator.py` | the firmware and web UI on your computer with simulated panels                                                                                                                                                                            |
 | `designer/`        | layout designer in the browser: place panels, sizes and start panel, controller / linker / power supply plan (`model.js`, `app.js`, `index.html`; `node --test designer/test`)                                                       |

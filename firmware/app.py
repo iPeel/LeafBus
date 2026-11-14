@@ -11,9 +11,11 @@ Details that matter for throughput on MicroPython:
   OSError. Raising an exception on an empty socket is expensive here and it
   happens hundreds of times a second otherwise (+50 % frame rate).
 * The bus is polled at least once a second even while frames stream in,
-  and every 500 ms when idle, every TOUCH_POLL_MS while touch actions are
+  and every 200 ms when idle, every TOUCH_POLL_MS while touch actions are
   configured. Without polling the panels stop applying frames after a few
-  seconds (PROTOCOL.md §4.2).
+  seconds, and after ~370 ms with no traffic at all they drop off the bus
+  until re-enumerated (PROTOCOL.md §4.2); panelbus' keep-alive timer covers
+  the stretches where this loop is busy elsewhere.
 * Housekeeping (Wi-Fi, clock, schedule, saving) runs four times a second,
   not on every pass of the loop.
 """
@@ -32,10 +34,11 @@ import e131
 import web
 import wifi
 
-VERSION = '2.0.1'
+VERSION = '2.0.2'
+EIO = 5                # errno: select() failed (ESP32: no memory for it)
 
 IDLE_MS = 300          # silence that counts as idle
-KEEP_MS = 500          # poll interval when idle
+KEEP_MS = 200          # poll interval when idle; the panels drop out after ~370 ms of silence
 MAX_NOPOLL_MS = 1000   # poll interval while frames stream in
 RESCAN_MS = 5000       # minimum gap between re-enumerations
 TOUCH_POLL_MS = 120    # poll interval while touch actions are configured
@@ -146,6 +149,7 @@ class App:
         self.loop_rate = 0.0
         self.errors = 0
         self.last_error = None
+        self.net_starved = 0           # main loop polls that found no network memory
         self._seen = self._seen_ddp = 0
         self.ntp_ok = False
         self.ntp_next = None
@@ -179,15 +183,29 @@ class App:
             self._log('bus:', e)
             return False
         self.raw = raw
+        # Free the old layout and effect geometry before computing the new
+        # ones, and collect between the steps: with 26 panels the old data,
+        # the new and the garbage of the computation did not fit at once.
         self.layout = None
         self.layout_error = None
+        self.engine.release(self.bus.npanels)
+        gc.collect()
         try:
             lay = geometry.layout(raw)
+            gc.collect()
             lay['tree'] = geometry.tree_json(lay['tree'])
             self.layout = lay
         except Exception as e:      # unknown panel types, corrupted strings
             self.layout_error = str(e) or repr(e)
-        self._rebuild(now)
+        gc.collect()
+        try:
+            self._rebuild(now)
+        except MemoryError:
+            # keep the lights running: the effect in chain order
+            self.layout_error = 'out of memory computing the effect geometry'
+            self._log('layout:', self.layout_error)
+            gc.collect()
+            self.engine.restart(now, fade=3, ctx=effects.Ctx(self.bus.npanels))
         return True
 
     def _rebuild(self, now):
@@ -733,10 +751,13 @@ class App:
              'micropython': '.'.join(str(x) for x in sys.implementation.version[:3]),
              'loop_hz': round(self.loop_rate),
              'errors': self.errors, 'last_error': self.last_error,
+             'net_starved': self.net_starved,
              'last_crash': self._crash_log(),
              'bus_ms': {'push': getattr(self.bus, 't_push', 0) / 1000,
                         'poll': getattr(self.bus, 't_reply', 0) / 1000,
-                        'short_replies': getattr(self.bus, 'short_replies', 0)}}
+                        'short_replies': getattr(self.bus, 'short_replies', 0),
+                        'hotplug_replies': getattr(self.bus, 'hotplug_replies', 0),
+                        'keepalives': getattr(self.bus, 'keepalives', 0)}}
         d['idf_heap'] = idf_heap()
         try:
             d['mem_free'] = gc.mem_free()
@@ -821,9 +842,27 @@ class App:
         gc.collect()
         burst = 0
         t_err = time.ticks_ms()
+        t_starved = None
         while True:
             try:
-                for sock, _ in poller.poll(1 if self.web.conns else 4):
+                try:
+                    ready = poller.poll(1 if self.web.conns else 4)
+                except OSError as e:
+                    if not e.args or e.args[0] != EIO:
+                        raise
+                    # ESP-IDF's select() allocates on every call; EIO means the
+                    # Wi-Fi/TCP heap is exhausted for the moment (packets queued
+                    # while this loop was busy). Not a fault to restart for:
+                    # keep the lights going and give the network stack time.
+                    ready = ()
+                    self.net_starved += 1
+                    now = time.ticks_ms()
+                    if t_starved is None or _since(now, t_starved) >= 5000:
+                        t_starved = now
+                        self._log('network: out of memory for a moment (ESP-IDF heap %s)'
+                                  % (idf_heap(),))
+                    time.sleep_ms(5)
+                for sock, _ in ready:
                     h = handlers.get(id(sock))
                     if h:
                         h()

@@ -319,21 +319,33 @@ def neighbours(positions, tree_links=()):
             adj[a].add(b)
             adj[b].add(a)
     # hash connectors into 2 mm cells; coinciding ones (< 1 mm apart, the
-    # coordinates are rounded) are in the same or a neighbouring cell
+    # coordinates are rounded) are in the same or a neighbouring cell.
+    # Integers throughout (0.01 mm; one int per cell): on the board a tuple
+    # of floats per point made this allocate ~70 kB for 26 panels.
     grid = {}
-    pts = []
+    px = []
+    py = []
+    pi = []
     for i in range(n):
         for x, y in connector_points(positions[i]):
-            k = (int(x // 2), int(y // 2))
-            grid.setdefault(k, []).append(len(pts))
-            pts.append((x, y, i))
-    for x, y, i in pts:
-        cx, cy = int(x // 2), int(y // 2)
+            xi = int(round(x * 100))
+            yi = int(round(y * 100))
+            k = (xi // 200) * 65536 + yi // 200
+            cell = grid.get(k)
+            if cell is None:
+                grid[k] = cell = []
+            cell.append(len(px))
+            px.append(xi)
+            py.append(yi)
+            pi.append(i)
+    for m in range(len(px)):
+        x, y, i = px[m], py[m], pi[m]
+        cx, cy = x // 200, y // 200
         for dx in (-1, 0, 1):
             for dy in (-1, 0, 1):
-                for j in grid.get((cx + dx, cy + dy), ()):
-                    x2, y2, b = pts[j]
-                    if b != i and abs(x2 - x) < 1 and abs(y2 - y) < 1:
+                for j in grid.get((cx + dx) * 65536 + cy + dy, ()):
+                    b = pi[j]
+                    if b != i and abs(px[j] - x) < 100 and abs(py[j] - y) < 100:
                         adj[i].add(b)
     return [sorted(s) for s in adj]
 

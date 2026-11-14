@@ -404,3 +404,83 @@ def test_json_is_built_in_small_parts(board):
     assert len(parts) > 1 and max(len(p) for p in parts) < 2 * web._Chunks.PART
     assert size == sum(len(p) for p in parts)
     assert json.loads(b''.join(parts)) == json.loads(json.dumps(body))
+
+
+def test_rescan_frees_the_old_geometry_first(board):
+    """The old layout and effect geometry are released before the new ones
+    are computed (on the board old + new did not fit with 26 panels)."""
+    a = board()
+    seen = []
+    real = appmod.geometry.layout
+
+    def layout(raw):
+        seen.append((a.layout, a.engine.eff, a.engine.ctx.n))
+        return real(raw)
+    appmod.geometry.layout = layout
+    try:
+        assert a.rescan()
+    finally:
+        appmod.geometry.layout = real
+    assert seen == [(None, None, a.bus.npanels)]
+    assert a.layout and a.engine.eff is not None and a.engine.ctx.n == a.bus.npanels
+
+
+def test_rescan_out_of_memory_keeps_the_lights_running(board, monkeypatch):
+    a = board()
+    name = a.engine.name
+    real = appmod.effects.Ctx
+
+    def ctx(n, positions=None, *rest, **kw):
+        if positions:
+            raise MemoryError('memory allocation failed')
+        return real(n, positions, *rest, **kw)
+    monkeypatch.setattr(appmod.effects, 'Ctx', ctx)
+    assert a.rescan()
+    assert a.engine.name == name and a.engine.eff is not None
+    assert a.engine.ctx.n == a.bus.npanels
+    assert 'out of memory' in a.layout_error
+    assert a.engine.tick(time.ticks_add(time.ticks_ms(), 10)) is not None
+
+
+def test_network_out_of_memory_does_not_restart_the_board(board, monkeypatch):
+    """poll() raises EIO when ESP-IDF's select() cannot allocate. That used to
+    count as an error, and 20 in 10 s made main.py restart the board."""
+    a = board()
+
+    class Sock:
+        pass
+
+    class Net:
+        def __init__(self):
+            self.sock = Sock()
+            self.conns = []
+            self.frames = 0
+            self.requests = 0
+            self.stats = {}
+            self.group = None
+
+        def tick(self):
+            pass
+
+        accept = tick
+
+    class Poll:
+        calls = 0
+
+        def register(self, *a):
+            pass
+
+        def poll(self, ms):
+            Poll.calls += 1
+            if Poll.calls > 30:
+                raise KeyboardInterrupt
+            raise OSError(appmod.EIO)
+
+    a.ddp, a.e131, a.web = Net(), Net(), Net()
+    monkeypatch.setattr(appmod.select, 'poll', Poll)
+    monkeypatch.setattr(appmod.time, 'sleep_ms', lambda ms: None)
+    pushes = a.bus.pushes
+    with pytest.raises(KeyboardInterrupt):
+        a.run()
+    assert a.net_starved == 30 and a.errors == 0
+    assert a.bus.pushes > pushes       # the lights kept going

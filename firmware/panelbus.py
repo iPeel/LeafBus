@@ -14,9 +14,20 @@ Wiring (PROTOCOL.md §3):
 
 TX must be open-drain: a push-pull output holds the line high when idle and
 the panel cannot answer (PROTOCOL.md §3.1).
+
+The bus must never go quiet for long (PROTOCOL.md §4.2): after ~370 ms
+without any frame the panels answer every poll with a lone hot-plug byte
+until they are enumerated again. A timer sends a poll whenever the bus has
+been idle for KEEPALIVE_MS, so slow Python code (geometry for a large
+assembly, building a JSON reply, NTP, a Wi-Fi scan) cannot drop them.
 """
 from machine import UART, mem32
 import time
+
+try:
+    from machine import Timer
+except ImportError:          # CPython shim
+    Timer = None
 
 BAUD = 1_000_000
 TX_PIN, RX_PIN = 17, 16
@@ -49,6 +60,10 @@ GET_UID = 0x82
 
 SKIP = bytes([0x01, 0xFF])   # bulk push chunk that leaves a panel unchanged
 
+KEEPALIVE_MS = 150           # poll when the bus has been quiet this long (limit ~370 ms)
+KEEPALIVE_TIMER = 0          # hardware timer id used for it
+_PULL = bytes([BULK_PULL])
+
 
 class BusError(Exception):
     pass
@@ -79,7 +94,8 @@ def chunk(r, g, b, w=0, transition=1):
 
 
 class PanelBus:
-    def __init__(self, tx=TX_PIN, rx=RX_PIN, baud=BAUD, open_drain=True):
+    def __init__(self, tx=TX_PIN, rx=RX_PIN, baud=BAUD, open_drain=True,
+                 keepalive=True):
         self.uart = UART(1, baudrate=baud, bits=8, parity=None, stop=1,
                          tx=tx, rx=rx, rxbuf=1024, timeout=50)
         if open_drain:
@@ -95,18 +111,76 @@ class PanelBus:
         self.t_push = 0       # us, last frame without reply (drain + send)
         self.t_reply = 0      # us, last exchange with reply
         self.short_replies = 0  # replies that ran into the window
+        self.hotplug_replies = 0  # polls answered with the hot-plug byte
+        self.keepalives = 0   # polls sent by the timer
+        self.busy = False     # an exchange is in progress: the timer keeps off
+        self.last_tx = time.ticks_ms()   # last frame sent, by anyone
+        self.last_ka = self.last_tx      # last poll sent by the timer
+        self._timer = None
+        self._ka_cb = self._keepalive    # bound once: no allocation per tick
+        if keepalive:
+            self.start_keepalive()
+
+    # --- keep-alive (PROTOCOL.md §4.2) ------------------------------------
+    def start_keepalive(self, period_ms=50):
+        """Poll from a timer whenever the bus has been quiet KEEPALIVE_MS.
+        The callback is scheduled between bytecodes and during blocking
+        socket waits, so it also runs while the main loop is busy."""
+        if Timer is None:
+            return False
+        self.stop_keepalive()
+        self._timer = Timer(KEEPALIVE_TIMER)
+        self._timer.init(period=period_ms, mode=Timer.PERIODIC, callback=self._ka_cb)
+        return True
+
+    def stop_keepalive(self):
+        if self._timer is not None:
+            self._timer.deinit()
+            self._timer = None
+
+    def _keepalive(self, _t):
+        if self.busy or not self.nodes:
+            return
+        now = time.ticks_ms()
+        if time.ticks_diff(now, self.last_tx) < KEEPALIVE_MS:
+            return
+        # the reply is left in the RX buffer; the next exchange waits for it
+        # to finish (_settle) and then drains it
+        self.uart.write(_PULL)
+        self.last_tx = self.last_ka = now
+        self.keepalives += 1
+
+    def _settle(self):
+        """Let the reply to a keep-alive poll arrive before the next frame:
+        its bytes would otherwise run into that frame's reply."""
+        left = 5 + self.npanels // 4 - time.ticks_diff(time.ticks_ms(), self.last_ka)
+        if left > 0:
+            time.sleep_ms(left)
 
     # --- transport ------------------------------------------------------
-    def _xact(self, frame, expect=0, wait_ms=40):
+    def _xact(self, frame, expect=0, wait_ms=40, hotplug_ends=False):
         """Send one frame and read the reply if one is expected.
 
         expect: number of reply bytes, 0 for none, -1 for "up to TERMINATOR".
+        hotplug_ends: a bulk pull reply of odd length ending in HOTSWAP is
+        complete (pairs of the panels still present, then CC; §8), so the
+        read stops there instead of waiting out the window.
         The master hears its own echo on the single wire; it is stripped.
 
         Reads take only the bytes already waiting (read(any())): a bare
         read() keeps waiting for more until the UART timeout (50 ms) passes,
         which stalled every frame on draining the previous frame's echo.
         """
+        was_busy = self.busy
+        self.busy = True
+        try:
+            return self._xact_locked(frame, expect, wait_ms, hotplug_ends)
+        finally:
+            self.last_tx = time.ticks_ms()
+            self.busy = was_busy
+
+    def _xact_locked(self, frame, expect, wait_ms, hotplug_ends):
+        self._settle()
         t0 = time.ticks_us()
         n = self.uart.any()
         while n:
@@ -131,6 +205,12 @@ class PanelBus:
                         return body
                 elif len(body) >= expect:
                     self.t_reply = time.ticks_diff(time.ticks_us(), t0)
+                    return body
+                elif hotplug_ends and len(body) & 1 and body[-1] == HOTSWAP:
+                    # status bytes never take the value CC, so an odd-length
+                    # reply ending in it is complete
+                    self.t_reply = time.ticks_diff(time.ticks_us(), t0)
+                    self.hotplug_replies += 1
                     return body
             time.sleep_us(200)
         self.t_reply = time.ticks_diff(time.ticks_us(), t0)
@@ -164,6 +244,14 @@ class PanelBus:
         The head of the string arrives corrupted on large assemblies
         (§9.2), so the string is read until one value repeats.
         """
+        was_busy = self.busy
+        self.busy = True     # no keep-alive poll between 00 and 80
+        try:
+            return self._enumerate(tries)
+        finally:
+            self.busy = was_busy
+
+    def _enumerate(self, tries):
         seen = {}
         raw = b''
         self.layout_unstable = False
@@ -198,8 +286,8 @@ class PanelBus:
         """2 bytes per panel: status and touch."""
         if wait_ms is None:
             wait_ms = 40 + 20 * self.npanels
-        return self._xact(bytes([BULK_PULL]), expect=2 * self.npanels,
-                          wait_ms=wait_ms)
+        return self._xact(_PULL, expect=2 * self.npanels, wait_ms=wait_ms,
+                          hotplug_ends=True)
 
     def hold(self, ms, period_ms=30):
         """Keep the bus polled for a while, as the stock controller does.
@@ -316,6 +404,20 @@ def line_check(bus, tries=20):
     too weak or the wires too long. Panels ignore these bytes."""
     pattern = bytes([0x55, 0xAA, 0x55, 0xAA, 0x0F, 0xF0])
     ok = 0
+    bus.busy = True
+    try:
+        ok = _line_check(bus, pattern, tries)
+    finally:
+        bus.busy = False
+        bus.last_tx = time.ticks_ms()
+    print('clean echo: %d/%d' % (ok, tries))
+    if ok < tries:
+        print('-> lower the pull-up (1 kOhm) or shorten the wires')
+    return ok == tries
+
+
+def _line_check(bus, pattern, tries):
+    ok = 0
     for _ in range(tries):
         while bus.uart.any():
             bus.uart.read()
@@ -327,7 +429,4 @@ def line_check(bus, tries=20):
             ok += 1
         else:
             print('distorted echo:', got)
-    print('clean echo: %d/%d' % (ok, tries))
-    if ok < tries:
-        print('-> lower the pull-up (1 kOhm) or shorten the wires')
-    return ok == tries
+    return ok

@@ -35,6 +35,7 @@ venv() {
     git clone -q -b "$MICROPYTHON" --depth 1 https://github.com/micropython/micropython.git
     git -C micropython submodule update --init --depth 1 lib/berkeley-db-1.xx lib/micropython-lib
 }
+python3 "$REPO/tools/patch_micropython.py" micropython   # heap patches, see there
 
 venv tools-venv
 tools-venv/bin/pip -q install "mpy-cross==${MICROPYTHON#v}.post2"
@@ -49,8 +50,10 @@ python3 esp-idf/tools/idf_tools.py install-python-env
 . esp-idf/export.sh > /dev/null
 
 cd micropython/ports/esp32
+# firmware/board/LEAFBUS: ESP32_GENERIC plus LeafBus memory settings
 idf.py -B "build-$BOARD-leafbus" \
     -D MICROPY_BOARD="$BOARD" \
+    -D MICROPY_BOARD_DIR="$REPO/firmware/board/LEAFBUS" \
     -D MICROPY_FROZEN_MANIFEST="$REPO/firmware/manifest.py" \
     build
 

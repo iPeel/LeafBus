@@ -148,10 +148,18 @@ The bus is not the bottleneck: color frames at up to 40 per second with `C0` eve
 ([Cptmeme][cpt]). `firmware/` reaches 20 frames per second (its effect engine's cap) with `C0` every 120 ms; an earlier ~16 frames per
 second came from UART reads that waited for their 50 ms timeout, not from the bus.
 
-Two obligations of the master:
+Three obligations of the master:
 
 * **Keep polling.** Without `C0` polls the panels apply only the first color frame and ignore the following ones.
-  Polling once a second is enough; 50 ms is what the stock controller does.
+  Polling once a second is enough while color frames keep the bus busy; 50 ms is what the stock controller does.
+* **Never leave the bus silent for more than ~350 ms.** Measured on 20 panels (Triangles and Mini Triangles): after
+  ~370 ms without any frame — `C0`, `E0` and `FC` all count — every following poll is answered with a lone `CC`
+  (no pairs) until the master runs `00` + `80` again, and that enumeration must itself be followed by traffic
+  within the same limit. Gaps of 360 ms were fine, 380 ms were not, with or without healthy polling before. A
+  master that computes geometry between `80` and its first poll, or blocks on the network, loses the assembly; on
+  smaller assemblies the same code may stay just inside the limit (`firmware/` worked at 18 panels and failed at
+  20). Whether the limit depends on the panel count is not known. `firmware/` sends a `C0` from a timer whenever
+  the bus has been quiet for 150 ms.
 * **Do not pause for seconds.** After a gap of ~2 s in all traffic the next color frame is ignored as well; resume
   polling before sending it.
 
@@ -479,7 +487,8 @@ reply (section 6.3):
 * **Hot-plug.** When a panel is added, removed or moved, the reply gains a trailing `CC` after the pairs of the panels
   still present. The master must run `00` + `80` again; the moved panel silently stops applying color until it does.
 * `CC` also follows the first enumeration after the master restarts while the panels stay powered, with no change to the
-  assembly ([Cptmeme][cpt]). A second `00` + `80` clears it. Re-enumerate on every `CC` without trying to tell the
+  assembly ([Cptmeme][cpt]). A second `00` + `80` clears it. A bus left silent for ~370 ms produces it too, as a
+  lone `CC` with no pairs (section 4.2). Re-enumerate on every `CC` without trying to tell the
   causes apart.
 
 ## 9. Quirks and variations

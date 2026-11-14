@@ -9,6 +9,10 @@ is up the access point closes again after AP_LINGER_MS, long enough for the
 setup page to show the new address.
 
 The hostname is announced over mDNS by MicroPython: http://leafbus.local
+
+A firmware built without SoftAP support (to save memory) cannot open the
+access point; the board then keeps retrying the station connection only, so
+the Wi-Fi details must be in config.json before it goes on the wall.
 """
 import time
 
@@ -38,6 +42,7 @@ class WiFi:
         self.connected = False
         self.ip = None
         self.ap_on = False
+        self.ap_failed = None     # when opening the access point last failed
         self.up_since = None
         now = time.ticks_ms()
         self.t_try = now
@@ -81,6 +86,11 @@ class WiFi:
     def start_ap(self):
         if self.ap_on:
             return
+        # tick() asks four times a second; after a failure (e.g. a firmware
+        # without SoftAP) try again only once a minute
+        if (self.ap_failed is not None and
+                time.ticks_diff(time.ticks_ms(), self.ap_failed) < RETRY_MS):
+            return
         try:
             self.ap.active(True)
             key = self.cfg['ap'].get('key') or ''
@@ -91,8 +101,14 @@ class WiFi:
                 self.ap.config(essid=self.ap_ssid(),
                                authmode=getattr(network, 'AUTH_OPEN', 0))
             self.ap_on = True
+            self.ap_failed = None
             print('wifi: access point %r at http://%s' % (self.ap_ssid(), self.ap_ip()))
         except Exception as e:
+            self.ap_failed = time.ticks_ms()
+            try:
+                self.ap.active(False)
+            except Exception:
+                pass
             print('wifi: access point failed:', e)
 
     def stop_ap(self):
