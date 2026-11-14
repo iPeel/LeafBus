@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LeafBus Designer</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 3 30 27H2z' fill='%23ffb547'/%3E%3C/svg%3E">
+<style>
+:root{--bg:#0e1014;--panel:#171a21;--panel2:#1f232c;--line:#2a2f3a;--text:#e9ecf2;--dim:#9aa3b2;--faint:#677083;--accent:#ffb547;--ok:#3ccf8e;--bad:#ff5d6c;--blue:#4aa3ff;
+  --hex:#f2a541;--tri:#3fb8af;--mini:#a07cf0;--canvas:#111419;--grid:rgba(255,255,255,.06)}
+@media (prefers-color-scheme:light){:root{--bg:#eef0f4;--panel:#fff;--panel2:#f2f4f7;--line:#dde1e8;--text:#151821;--dim:#5b6475;--faint:#8a93a3;--canvas:#f7f8fa;--grid:rgba(0,0,0,.07)}}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+button,input,select{font:inherit;color:inherit}
+header{height:52px;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid var(--line);background:var(--panel)}
+.logo{display:flex;align-items:center;gap:8px;font-weight:700;white-space:nowrap}
+.logo svg{width:22px;height:22px}
+.spacer{flex:1}
+.btn{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:6px 11px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn:hover{border-color:var(--faint)}.btn:disabled{opacity:.4;cursor:default}
+.btn.primary{background:var(--accent);color:#1b1205;border-color:transparent;font-weight:600}
+.btn.sm{padding:4px 9px;font-size:13px}
+.btn.on{border-color:var(--accent);color:var(--accent)}
+.card h3 .seg{padding:2px}.card h3 .seg button{padding:2px 8px;text-transform:none;letter-spacing:0;font-size:12px}
+.btn svg{width:16px;height:16px}
+.seg{display:inline-flex;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:3px;gap:2px}
+.seg button{border:0;background:none;padding:5px 12px;font-size:inherit;border-radius:7px;cursor:pointer;color:var(--dim)}
+.seg button.on{background:var(--accent);color:#1b1205;font-weight:600}
+.menu{position:relative}
+.menu .list{display:none;position:absolute;right:0;top:calc(100% + 6px);background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.4);padding:6px;min-width:230px;z-index:30}
+.menu.open .list{display:block}
+.menu .list button{display:flex;gap:10px;width:100%;text-align:left;background:none;border:0;padding:8px 10px;border-radius:8px;cursor:pointer}
+.menu .list button:hover{background:var(--panel2)}
+.menu .list hr{border:0;border-top:1px solid var(--line);margin:4px 0}
+.menu .list small{color:var(--faint);display:block}
+.main{display:grid;grid-template-columns:56px minmax(0,1fr) 340px;height:calc(100% - 52px)}
+.tools{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0;overflow-y:auto}
+.tools button{width:42px;height:42px;border-radius:10px;border:1px solid transparent;background:none;cursor:pointer;display:grid;place-items:center;color:var(--dim);position:relative}
+.tools button:hover{background:var(--panel2)}
+.tools button.on{background:var(--panel2);border-color:var(--accent);color:var(--text)}
+.tools button svg{width:24px;height:24px}
+.tools button kbd{position:absolute;right:3px;bottom:1px;font-size:9px;color:var(--faint);font-family:inherit}
+.tools hr{width:30px;border:0;border-top:1px solid var(--line);margin:4px 0}
+.stage{position:relative;overflow:hidden;background:var(--canvas);touch-action:none}
+#cv{width:100%;height:100%;display:block;user-select:none}
+#cv.pan{cursor:grab}#cv.panning{cursor:grabbing}#cv.place{cursor:crosshair}#cv.pick{cursor:pointer}
+.hint{position:absolute;left:12px;bottom:10px;font-size:12px;color:var(--faint);pointer-events:none;max-width:70%}
+.zoom{position:absolute;right:10px;bottom:10px;display:flex;gap:4px}
+.empty{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;text-align:center;color:var(--dim)}
+.empty div{max-width:420px;padding:20px}
+.empty b{display:block;color:var(--text);font-size:17px;margin-bottom:6px}
+.side{background:var(--panel);border-left:1px solid var(--line);overflow-y:auto;padding:12px}
+.card{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px;background:var(--panel)}
+.card h3{margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);display:flex;align-items:center;gap:6px}
+.card h3 .spacer{flex:1}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:13px}
+.kv b{color:var(--dim);font-weight:500}
+.counts{display:flex;gap:8px;margin-bottom:10px}
+.count{flex:1;background:var(--panel2);border-radius:10px;padding:8px;text-align:center}
+.count svg{width:22px;height:22px;display:block;margin:0 auto 2px}
+.count b{font-size:18px;display:block}
+.count span{font-size:11px;color:var(--dim)}
+.prob{background:color-mix(in srgb,var(--bad) 13%,transparent);border:1px solid color-mix(in srgb,var(--bad) 45%,transparent);border-radius:9px;padding:7px 10px;margin-bottom:8px;font-size:13px}
+.good{background:color-mix(in srgb,var(--ok) 12%,transparent);border:1px solid color-mix(in srgb,var(--ok) 40%,transparent);border-radius:9px;padding:7px 10px;margin-bottom:8px;font-size:13px}
+.alt{display:flex;align-items:center;gap:8px;width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:6px 9px;margin-bottom:5px;cursor:pointer;text-align:left}
+.alt.on{border-color:var(--ok)}
+.alt i{font-style:normal;color:var(--faint);font-size:12px;margin-left:auto}
+.bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:4px}
+.bar i{display:block;height:100%;background:var(--blue)}
+.bar i.over{background:var(--bad)}
+.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.small{font-size:12px}.muted{color:var(--dim)}.faint{color:var(--faint)}
+label.chk{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;margin:6px 0}
+input[type=number]{width:72px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:4px 7px}
+input[type=text]{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 9px;width:100%}
+details summary{cursor:pointer;color:var(--dim);font-size:13px;margin-top:6px}
+.legend{display:grid;grid-template-columns:22px 1fr;gap:6px 8px;align-items:center;font-size:12.5px;color:var(--dim)}
+.legend svg{width:22px;height:16px}
+.depthscale{height:8px;border-radius:4px;background:linear-gradient(90deg,hsl(140,60%,45%),hsl(60,75%,50%),hsl(0,70%,55%))}
+dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:14px;padding:18px;width:min(460px,92vw)}
+dialog::backdrop{background:rgba(0,0,0,.55)}
+dialog h3{margin:0 0 10px}
+dialog .row{justify-content:flex-end;margin-top:14px}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);background:#232833;color:#fff;border:1px solid #333a48;padding:9px 15px;border-radius:11px;opacity:0;transition:.2s;z-index:60;pointer-events:none}
+.toast.on{opacity:1;transform:translateX(-50%)}
+.toast.bad{border-color:var(--bad)}
+/* svg */
+.pc{stroke:rgba(0,0,0,.55);stroke-width:1.2;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.pc.sel{stroke:#fff;stroke-width:2.5}
+.pc.bad{fill:url(#hatch)!important;stroke:var(--bad);stroke-width:2}
+.pc.island{opacity:.45}
+.ghost{opacity:.55;pointer-events:none}
+.ghost.bad .pc{fill:var(--bad)!important}
+.lbl{font:600 15px system-ui,sans-serif;fill:#fff;text-anchor:middle;dominant-baseline:central;paint-order:stroke;stroke:rgba(0,0,0,.6);stroke-width:3px;pointer-events:none}
+.link{fill:none;stroke:#fff;stroke-width:2;vector-effect:non-scaling-stroke;opacity:.85}
+.linker{fill:#1a1d24;stroke:#fff;stroke-width:1.4;vector-effect:non-scaling-stroke}
+.extra{fill:none;stroke:#fff;stroke-width:1.2;stroke-dasharray:3 3;vector-effect:non-scaling-stroke;opacity:.7}
+.dim{stroke:var(--accent);stroke-width:1.3;vector-effect:non-scaling-stroke;fill:none}
+.dim.thin{stroke-dasharray:4 3;stroke-width:1}
+.dim.box{stroke-dasharray:2 4;stroke-width:1;opacity:.7}
+.dimlbl{font:600 13px system-ui,sans-serif;fill:#fff;text-anchor:middle;dominant-baseline:central;paint-order:stroke;stroke:rgba(0,0,0,.8);stroke-width:4px;stroke-linejoin:round;pointer-events:none}
+.start{fill:none;stroke:#fff;stroke-width:2.5;stroke-dasharray:6 4;vector-effect:non-scaling-stroke}
+.startinfo{background:color-mix(in srgb,var(--accent) 12%,transparent);border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:9px;padding:8px 10px;margin-top:10px;font-size:13px}
+.startinfo b{color:var(--text)}
+.startinfo .grid4{display:grid;grid-template-columns:auto 1fr auto 1fr;gap:2px 8px;margin-top:4px}
+.startinfo .grid4 span:nth-child(odd){color:var(--dim)}
+.free{fill:var(--accent);stroke:#000;stroke-width:1;vector-effect:non-scaling-stroke;cursor:pointer}
+.free:hover{fill:#fff}
+@media (max-width:900px){.main{grid-template-columns:52px minmax(0,1fr)}.side{position:fixed;right:0;top:52px;bottom:0;width:min(340px,90vw);transform:translateX(100%);transition:.2s;z-index:20;box-shadow:-10px 0 30px rgba(0,0,0,.3)}.side.open{transform:none}#sidebtn{display:inline-flex!important}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="i-select" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M5 3l14 8-6 2-3 6z"/></symbol>
+    <symbol id="i-hex" viewBox="0 0 24 24"><path d="M7 3.5h10l5 8.5-5 8.5H7L2 12z" fill="var(--hex)" stroke="rgba(0,0,0,.35)"/></symbol>
+    <symbol id="i-tri" viewBox="0 0 24 24"><path d="M12 2.5 22.5 20.5h-21z" fill="var(--tri)" stroke="rgba(0,0,0,.35)"/></symbol>
+    <symbol id="i-mini" viewBox="0 0 24 24"><path d="M12 8.5 17.5 18h-11z" fill="var(--mini)" stroke="rgba(0,0,0,.35)"/></symbol>
+    <symbol id="i-erase" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H9l-5-5 10-10 7 7-6 6M9 9l7 7"/></symbol>
+    <symbol id="i-rot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></symbol>
+    <symbol id="i-flip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3v18M9 7 3 17h6zM15 7l6 10h-6z"/></symbol>
+    <symbol id="i-del" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+    <symbol id="i-fit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m15 14 5-5-5-5M20 9H9a5 5 0 0 0 0 10h3"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M14 3H6v18h12V7zM14 3v4h4"/></symbol>
+    <symbol id="i-side" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></symbol>
+    <symbol id="i-plug" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4"/></symbol>
+    <symbol id="i-ruler" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17 17 3l4 4L7 21zM7 13l2 2M10 10l2 2M13 7l2 2"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z" fill="currentColor"/></symbol>
+  </defs>
+</svg>
+
+<header>
+  <div class="logo"><svg viewBox="0 0 32 32"><path d="M16 3 30 27H2z" fill="#ffb547"/><path d="M16 11 23 23H9z" fill="#ff7a59"/></svg>LeafBus Designer</div>
+  <div class="seg" id="views"><button data-v="design" class="on">Design</button><button data-v="connections">Connections</button></div>
+  <div class="spacer"></div>
+  <button class="btn" id="dims" title="Sizes and the panel to start from (D)"><svg><use href="#i-ruler"/></svg><span>Sizes</span></button>
+  <button class="btn" id="undo" title="Undo (Ctrl+Z)"><svg><use href="#i-undo"/></svg></button>
+  <button class="btn" id="redo" title="Redo (Ctrl+Shift+Z)"><svg><use href="#i-redo"/></svg></button>
+  <div class="menu" id="filemenu">
+    <button class="btn" id="filebtn"><svg><use href="#i-file"/></svg>File</button>
+    <div class="list">
+      <button data-a="new">New layout</button>
+      <button data-a="example-honeycomb">Example: honeycomb<small>7 Hexagons</small></button>
+      <button data-a="example-star">Example: star<small>Triangles around a Hexagon</small></button>
+      <button data-a="example-wave">Example: wave<small>Hexagons, Triangles and Minis, 2 supplies</small></button>
+      <hr>
+      <button data-a="open">Open file…</button>
+      <button data-a="save">Save file</button>
+      <button data-a="share">Copy share link</button>
+      <button data-a="svg">Export wall template (SVG, 1:1)<small>Print to mark panel and linker positions</small></button>
+      <hr>
+      <button data-a="board">Load from a LeafBus board…<small>The assembly as the panels report it</small></button>
+    </div>
+  </div>
+  <button class="btn" id="sidebtn" style="display:none" title="Panel"><svg><use href="#i-side"/></svg></button>
+</header>
+
+<div class="main">
+  <nav class="tools" id="tools">
+    <button data-t="select" title="Select, move (V) — drag empty space to pan, Shift+drag to select an area"><svg><use href="#i-select"/></svg><kbd>V</kbd></button>
+    <button data-t="hex" title="Hexagon (H)"><svg><use href="#i-hex"/></svg><kbd>H</kbd></button>
+    <button data-t="tri" title="Triangle (T) — points up or down depending on where you click"><svg><use href="#i-tri"/></svg><kbd>T</kbd></button>
+    <button data-t="mini" title="Mini Triangle (M)"><svg><use href="#i-mini"/></svg><kbd>M</kbd></button>
+    <button data-t="erase" title="Erase (E) — or right-click a panel"><svg><use href="#i-erase"/></svg><kbd>E</kbd></button>
+    <hr>
+    <button data-a="rotate" title="Rotate selection 60° (R, Shift+R the other way)"><svg><use href="#i-rot"/></svg><kbd>R</kbd></button>
+    <button data-a="mirror" title="Mirror selection (F)"><svg><use href="#i-flip"/></svg><kbd>F</kbd></button>
+    <button data-a="delete" title="Delete selection (Del)"><svg><use href="#i-del"/></svg></button>
+    <hr>
+    <button data-a="fit" title="Zoom to fit (0)"><svg><use href="#i-fit"/></svg><kbd>0</kbd></button>
+  </nav>
+
+  <section class="stage" id="stage">
+    <svg id="cv" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="rgba(255,93,108,.35)"/><path d="M0 0v8" stroke="rgba(255,93,108,.9)" stroke-width="3"/></pattern>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#fff"/></marker>
+      </defs>
+      <g id="g-grid"></g><g id="g-panels"></g><g id="g-over"></g><g id="g-ghost"></g><rect id="marquee" fill="rgba(255,181,71,.12)" stroke="#ffb547" vector-effect="non-scaling-stroke" display="none"/>
+    </svg>
+    <div class="empty" id="empty"><div><b>Lay out your panels</b>Pick a Hexagon, Triangle or Mini Triangle on the left and click on the grid; panels snap together edge to edge. Or start from an example in the File menu, or load the assembly from your LeafBus board.<br><br>Then open <b style="display:inline;font-size:inherit">Connections</b> to see where to put the controller, the power supplies and the linkers.</div></div>
+    <div class="hint" id="hint"></div>
+    <div class="zoom"><button class="btn sm" id="zin">+</button><button class="btn sm" id="zout">−</button></div>
+  </section>
+
+  <aside class="side" id="side">
+    <div class="card">
+      <h3>Layout<span class="spacer"></span><span class="seg" id="units"><button data-u="cm" class="on">cm</button><button data-u="in">in</button></span></h3>
+      <div class="counts">
+        <div class="count"><svg><use href="#i-hex"/></svg><b id="n-hex">0</b><span>Hexagons</span></div>
+        <div class="count"><svg><use href="#i-tri"/></svg><b id="n-tri">0</b><span>Triangles</span></div>
+        <div class="count"><svg><use href="#i-mini"/></svg><b id="n-mini">0</b><span>Minis</span></div>
+      </div>
+      <div class="kv" id="summary"></div>
+      <div id="startinfo"></div>
+    </div>
+    <div id="problems"></div>
+    <div class="card" id="c-ctl">
+      <h3>Controller<span class="spacer"></span><button class="btn sm" data-pick="controller">Place…</button></h3>
+      <div id="ctl"></div>
+      <div class="row small" style="margin:8px 0 6px"><span class="muted">Best</span>
+        <div class="seg" id="prefer"><button data-p="shallow" class="on">fewest hops</button><button data-p="bottom">lowest edge</button></div></div>
+      <div id="alts"></div>
+    </div>
+    <div class="card">
+      <h3>Linkers</h3>
+      <div id="linkers"></div>
+      <label class="chk"><input type="checkbox" id="extras" checked>Show optional extra linkers</label>
+    </div>
+    <div class="card">
+      <h3>Power<span class="spacer"></span><button class="btn sm" data-pick="psu">Place…</button></h3>
+      <div id="psus"></div>
+      <details><summary>Power figures</summary>
+        <div class="kv" style="margin-top:8px;align-items:center">
+          <b>Supply</b><span><input type="number" id="w-psu" step="1" min="1"> W</span>
+          <b>Hexagon</b><span><input type="number" id="w-hex" step="0.01" min="0"> W</span>
+          <b>Triangle</b><span><input type="number" id="w-tri" step="0.01" min="0"> W</span>
+          <b>Mini Triangle</b><span><input type="number" id="w-mini" step="0.01" min="0"> W</span>
+        </div>
+        <p class="small faint">Defaults from Nanoleaf's spec sheets: a 42 W supply runs 21 Hexagons, 28 Triangles or 77 Mini Triangles. Check mixed layouts with Nanoleaf's calculator.</p>
+      </details>
+    </div>
+    <div class="card">
+      <h3>How to read it</h3>
+      <div class="legend">
+        <svg viewBox="0 0 22 16"><rect x="1" y="4" width="20" height="8" rx="2" fill="#1a1d24" stroke="#fff"/></svg><span>linker the bus runs through (the minimum set)</span>
+        <svg viewBox="0 0 22 16"><rect x="1" y="4" width="20" height="8" rx="2" fill="none" stroke="#fff" stroke-dasharray="3 2"/></svg><span>optional linker: panels touch here; more power paths and a stiffer assembly, the panels ignore the extra data loop</span>
+        <svg viewBox="0 0 22 16" style="color:var(--ok)"><use href="#i-plug" x="3" y="0" width="16" height="16"/></svg><span>controller (LeafBus ESP32 or the Nanoleaf controller)</span>
+        <svg viewBox="0 0 22 16" style="color:var(--blue)"><use href="#i-bolt" x="3" y="0" width="16" height="16"/></svg><span>power supply</span>
+        <div class="depthscale"></div><span>hops from the controller: few → many</span>
+      </div>
+      <p class="small faint" style="margin:10px 0 0">Data and power both travel panel to panel through linkers. Every hop is a relay: fewer hops from the controller to the farthest panel make the bus quicker to enumerate and more robust; fewer hops from a supply mean less voltage drop. Controller and supplies plug into free connectors on the outside edge.</p>
+    </div>
+  </aside>
+</div>
+
+<dialog id="dlg"><form method="dialog"><h3 id="dlgt"></h3><div id="dlgb"></div><div class="row"><button class="btn" type="button" id="dlgcancel">Cancel</button><button class="btn primary" value="ok" id="dlgok">OK</button></div></form></dialog>
+<input type="file" id="fileinput" accept=".json,application/json" hidden>
+<div class="toast" id="toast"></div>
+
+<script src="model.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
