@@ -1,0 +1,12 @@
+{
+  "domain": "leafbus",
+  "name": "LeafBus",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://github.com/MyrikLD/LeafBus#home-assistant",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/MyrikLD/LeafBus/issues",
+  "requirements": [],
+  "version": "1.0.0"
+}

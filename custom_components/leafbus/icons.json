@@ -1,0 +1,14 @@
+{
+  "entity": {
+    "switch": {
+      "power": {"default": "mdi:power"}
+    },
+    "select": {
+      "preset": {"default": "mdi:palette"},
+      "sleep_timer": {
+        "default": "mdi:timer-outline",
+        "state": {"off": "mdi:timer-off-outline"}
+      }
+    }
+  }
+}

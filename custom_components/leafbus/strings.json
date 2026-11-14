@@ -1,0 +1,46 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "LeafBus board",
+        "description": "Address of the LeafBus ESP32 that drives your Nanoleaf Shapes panels.",
+        "data": {"host": "Host"},
+        "data_description": {"host": "IP address or hostname, e.g. 192.168.1.42 or leafbus.local"}
+      },
+      "reconfigure": {
+        "title": "Change the board's address",
+        "data": {"host": "Host"},
+        "data_description": {"host": "IP address or hostname of the same board"}
+      }
+    },
+    "error": {
+      "cannot_connect": "No answer from that address. Is the board on the network, and is the address right?",
+      "not_leafbus": "Something answered, but not a LeafBus board."
+    },
+    "abort": {
+      "already_configured": "This board is already set up; its address has been updated.",
+      "reconfigure_successful": "The board's address has been updated.",
+      "wrong_board": "That address belongs to a different LeafBus board."
+    }
+  },
+  "entity": {
+    "switch": {
+      "power": {"name": "Power"}
+    },
+    "select": {
+      "preset": {"name": "Preset"},
+      "sleep_timer": {
+        "name": "Sleep timer",
+        "state": {
+          "off": "Off",
+          "15": "15 minutes",
+          "30": "30 minutes",
+          "60": "1 hour",
+          "120": "2 hours",
+          "240": "4 hours",
+          "480": "8 hours"
+        }
+      }
+    }
+  }
+}
