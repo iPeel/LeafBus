@@ -106,3 +106,48 @@ def test_neighbours_include_off_centre_contacts():
     for i, ns in enumerate(nb):
         assert all(i in nb[j] for j in ns)
         assert len(ns) <= {g.HEXAGON: 6, g.TRIANGLE: 6, g.MINI_TRIANGLE: 3}[lay['positions'][i]['shape']]
+
+
+def chain(n):
+    """n Mini Triangles in a chain: the deepest tree n panels can make."""
+    return bytes([0xB1] + [0xB0] * (n - 1) + [0x04] * n + [0x95, 0x40])
+
+
+@pytest.mark.parametrize('n', [18, 20, 25, 64])
+def test_long_chain_needs_no_recursion(n):
+    """On an ESP32 MicroPython runs out of C stack a few tens of calls deep;
+    a chain of ~20 panels used to reset the board. Parse it with a Python
+    stack only a few frames deeper than the caller's."""
+    import inspect
+    import json
+    import sys
+    import threading
+    out = {}
+
+    def job():
+        # in a fresh thread the stack is shallow; the limit is restored here
+        # because it applies to every thread, the test runner's included
+        old = sys.getrecursionlimit()
+        sys.setrecursionlimit(len(inspect.stack()) + 12)
+        try:
+            lay = g.layout(chain(n))
+            lay['tree'] = g.tree_json(lay['tree'])
+            out['lay'] = lay
+            out['text'] = g.tree_text(g.parse(chain(n)))
+        except RecursionError as e:
+            out['err'] = e
+        finally:
+            sys.setrecursionlimit(old)
+    t = threading.Thread(target=job)
+    t.start()
+    t.join()
+    assert 'err' not in out, out.get('err')
+    lay = out['lay']
+    assert len(lay['positions']) == n and len(lay['links']) == n - 1
+    assert lay['psu']['chunk'] == n - 1              # on the master panel, as in B1 B0 04 04 95
+    tree = lay['tree']
+    chain_ix = [i for i, e in enumerate(tree) if not e.get('psu')]
+    assert [tree[i]['parent'] for i in chain_ix] == [-1] + chain_ix[:-1]
+    assert [tree[i]['chunk'] for i in chain_ix] == list(range(n - 1, -1, -1))
+    assert out['text'].count('\n') == n + 1
+    json.dumps(lay)

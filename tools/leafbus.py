@@ -113,17 +113,34 @@ def parse_color(s):
 
 # --- layout -----------------------------------------------------------------
 
-def print_tree(node, indent=0):
-    pad = '  ' * indent
-    if node.get('psu'):
-        print(pad + 'PSU')
-        return
-    print('%schunk %-2d %-13s root=%s pos=(%.1f, %.1f) o=%d'
-          % (pad, node['chunk'], SHAPE_NAMES.get(node['shape'], '?'), node['root_edge'],
-             node['x'], node['y'], node['o']))
+def flatten(node, parent=-1, edge=None, out=None):
+    """Nested tree (firmware before 2.0.1) -> flat list as sent today."""
+    out = [] if out is None else out
+    me = len(out)
+    out.append(dict({k: v for k, v in node.items() if k != 'children'},
+                    parent=parent, edge=edge))
     for e, c in sorted(node.get('children', {}).items(), key=lambda kv: int(kv[0])):
-        print('%s  connector %s ->' % (pad, e))
-        print_tree(c, indent + 2)
+        flatten(c, me, e, out)
+    return out
+
+
+def print_tree(tree):
+    """tree: flat list in string order, entries naming parent index and connector."""
+    if isinstance(tree, dict):
+        tree = flatten(tree)
+    depth = []
+    for n in tree:
+        d = 0 if n['parent'] < 0 else depth[n['parent']] + 2
+        depth.append(d)
+        pad = '  ' * d
+        if n['parent'] >= 0:
+            print('%sconnector %s ->' % ('  ' * (d - 1), n['edge']))
+        if n.get('psu'):
+            print(pad + 'PSU')
+            continue
+        print('%schunk %-2d %-13s root=%s pos=(%.1f, %.1f) o=%d'
+              % (pad, n['chunk'], SHAPE_NAMES.get(n['shape'], '?'), n['root_edge'],
+                 n['x'], n['y'], n['o']))
 
 
 def polygon(p):

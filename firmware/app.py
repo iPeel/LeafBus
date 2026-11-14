@@ -32,7 +32,7 @@ import e131
 import web
 import wifi
 
-VERSION = '2.0.0'
+VERSION = '2.0.1'
 
 IDLE_MS = 300          # silence that counts as idle
 KEEP_MS = 500          # poll interval when idle

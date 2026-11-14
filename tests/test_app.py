@@ -257,7 +257,8 @@ def test_layout_json_is_complete(board):
     L = http(board(), 'GET', '/api/layout')[1]
     assert L['panels'] == 14 and len(L['positions']) == 14
     assert L['psu']['chunk'] == 3 and len(L['neighbours']) == 14
-    assert L['tree']['chunk'] == 13
+    assert L['tree'][0]['chunk'] == 13 and L['tree'][0]['parent'] == -1
+    assert len([n for n in L['tree'] if not n.get('psu')]) == 14
 
 
 # --- schedule ---------------------------------------------------------------------------

@@ -585,15 +585,18 @@ function renderLayout(){const L=S.layout;if(!L)return;const c=L.config;
   $('#rot').value=c.rotation;setP($('#rot'));$('#rotv').textContent=c.rotation+'°';$('#mirror').classList.toggle('primary',!!c.mirror);
   $('#rawstr').textContent=(L.raw||'—').replace(/(..)/g,'$1 ').trim();
   $('#lsummary').textContent=`${L.panels} panel${L.panels===1?'':'s'}`+(L.psu?' · power supply on panel '+L.psu.chunk:'');
-  $('#treetxt').textContent=L.tree?treeText(L.tree,0):'';
+  $('#treetxt').textContent=Array.isArray(L.tree)?treeText(L.tree):'';
   const ban=$('#layout-banner');ban.innerHTML='';
   if(L.error)ban.append(h('div',{class:'banner bad'},L.error));
   if(L.stale)ban.append(h('div',{class:'banner warn'},'The assembly changed since panel names and exclusions were saved; check them.'));
   if(L.unstable)ban.append(h('div',{class:'banner warn'},'The layout string did not repeat while reading it; the picture may be off. Rescan to try again.'));
   renderStages();renderInspector()}
 const SHAPES={7:'Hexagon',8:'Triangle',9:'Mini triangle'};
-function treeText(n,d){const pad='  '.repeat(d);if(n.psu)return pad+'power supply\n';let s=`${pad}chunk ${n.chunk} ${SHAPES[n.shape]||'unknown'} (root connector ${n.root_edge})\n`;
-  for(const k of Object.keys(n.children||{}).sort())s+=`${pad}  connector ${k} →\n`+treeText(n.children[k],d+2);return s}
+/* tree: flat list in string order, each entry with its parent's index and connector */
+function treeText(t){const depth=[];let s='';
+  t.forEach((n,i)=>{const d=n.parent<0?0:depth[n.parent]+2;depth[i]=d;const pad='  '.repeat(d);
+    if(n.parent>=0)s+=`${'  '.repeat(d-1)}connector ${n.edge} →\n`;
+    s+=n.psu?pad+'power supply\n':`${pad}chunk ${n.chunk} ${SHAPES[n.shape]||'unknown'} (root connector ${n.root_edge})\n`});return s}
 function actionOptions(sel,cur,withDefault){sel.innerHTML='';const opts=[['none','Nothing'],['effect','Effect reacts'],['next','Next preset'],['prev','Previous preset'],['power','Power on / off'],['bright','Step brightness']];
   if(withDefault)sel.append(h('option',{value:''},'Same as all panels'));
   for(const [v,t] of opts)sel.append(h('option',{value:v},t));

@@ -50,55 +50,88 @@ def parse(raw):
     'index' is the panel's position in the string; the power supply has none.
     A root connector outside 0..edges-1 (corrupted byte, §9.2) is stored as
     None and resolved later by place().
+
+    No function here recurses: a chain of panels nests one level per panel,
+    and MicroPython on an ESP32 runs out of C stack a few tens of levels
+    deep, which resets the board without a traceback.
     """
     body = bytes(raw)
     if TERMINATOR in body:
         body = body[:body.index(TERMINATOR)]
     if not body or not (body[0] & 0x80):
         raise ValueError('invalid first byte in layout string')
-    counter = [0]
+    count = 0
 
-    def node(i, parent_edge):
-        hdr = body[i]
-        i += 1
-        code = (hdr >> 4) & 7
+    def new(hdr, parent_edge):
         n = {'hdr': hdr, 'root_edge': hdr & 7, 'parent_edge': parent_edge,
              'sep': [], 'children': {}}
+        code = (hdr >> 4) & 7
         if code == PSU_CODE:
             n['edges'] = 1
             n['shape'] = PSU
-            return n, i
+            return n, None
         edges = connectors(code)
         n['edges'] = edges
-        n['index'] = counter[0]
-        counter[0] += 1
         root = n['root_edge']
         if root >= edges:
             n['root_edge'] = None
             e = 0
         else:
             e = (root + 1) % edges
-        seps = 0
-        while i < len(body):
-            b = body[i]
-            if b & 0x80:
-                child, i = node(i, e)
-                n['children'][e] = child
-            else:
-                seps += 1
-                if seps == edges - 1:
-                    break
-                n['sep'].append(b)
-                e = (e + 1) % edges
-                i += 1
-        n['shape'] = subtype(edges, n['sep'])
-        return n, i
+        return n, [n, e, 0]        # open node: [node, current connector, separators]
 
-    root, end = node(0, None)
-    root['npanels'] = counter[0]
-    if end != len(body):
-        root['unparsed'] = body[end:]
+    def close(n):
+        n['shape'] = subtype(n['edges'], n['sep'])
+
+    root, top = new(body[0], None)
+    if top:
+        root['index'] = count
+        count += 1
+    stack = [top] if top else []
+    i = 1
+    while stack and i < len(body):
+        top = stack[-1]
+        n = top[0]
+        b = body[i]
+        if b & 0x80:
+            child, frame = new(b, top[1])
+            n['children'][top[1]] = child
+            i += 1
+            if frame:
+                child['index'] = count
+                count += 1
+                stack.append(frame)
+        else:
+            top[2] += 1
+            if top[2] == n['edges'] - 1:
+                close(n)           # the byte belongs to the parent
+                stack.pop()
+                continue
+            n['sep'].append(b)
+            top[1] = (top[1] + 1) % n['edges']
+            i += 1
+    while stack:                   # string ended inside open nodes
+        close(stack.pop()[0])
+    root['npanels'] = count
+    if i != len(body):
+        root['unparsed'] = body[i:]
     return root
+
+
+def walk(root, sort=False):
+    """Every node of the tree in string order (depth first, pre-order), as
+    (node, parent, connector on the parent, depth). Iterative."""
+    out = []
+    stack = [(root, None, None, 0)]
+    while stack:
+        item = stack.pop()
+        out.append(item)
+        n, d = item[0], item[3]
+        kids = n['children']
+        keys = sorted(kids) if sort else list(kids)
+        for e in reversed(keys):
+            stack.append((kids[e], n, e, d + 1))
+    return out
 
 
 # --- geometry (§7.6) --------------------------------------------------------
@@ -154,17 +187,24 @@ def place(root):
     placed = []
     deferred = []
 
-    def walk(p):
-        placed.append(p)
-        for pe, c in p['children'].items():
-            if c['shape'] == PSU or p['shape'] is None or c['shape'] is None:
-                c['x'], c['y'], c['o'] = p['x'], p['y'], p['o']
-            elif c['root_edge'] is None:
-                deferred.append((p, pe, c))
-                continue
-            else:
-                _attach(p, pe, c, c['root_edge'])
-            walk(c)
+    def walk(top):
+        # pre-order like the recursive form: a child is placed (or deferred)
+        # when it is reached, after the subtrees of its earlier siblings
+        stack = [(None, None, top)]
+        while stack:
+            p, pe, c = stack.pop()
+            if p is not None:
+                if c['shape'] == PSU or p['shape'] is None or c['shape'] is None:
+                    c['x'], c['y'], c['o'] = p['x'], p['y'], p['o']
+                elif c['root_edge'] is None:
+                    deferred.append((p, pe, c))
+                    continue
+                else:
+                    _attach(p, pe, c, c['root_edge'])
+            placed.append(c)
+            kids = list(c['children'].items())
+            for e, k in reversed(kids):
+                stack.append((c, e, k))
     walk(root)
 
     for p, pe, c in deferred:
@@ -184,15 +224,7 @@ def place(root):
 
 def panels(root):
     """Flat list of panels (no PSU) in string order."""
-    out = []
-
-    def walk(n):
-        if n['shape'] != PSU:
-            out.append(n)
-        for e in sorted(n['children']):
-            walk(n['children'][e])
-    walk(root)
-    return out
+    return [n for n, _, _, _ in walk(root, sort=True) if n['shape'] != PSU]
 
 
 def _connector_xy(p, e):
@@ -222,15 +254,9 @@ def layout(raw):
     for p in ps:
         p['chunk'] = n - 1 - p['index']
     psu = None
-
-    def find_psu(node):
-        nonlocal psu
-        for e, c in node['children'].items():
-            if c['shape'] == PSU:
-                psu = {'chunk': node.get('chunk'), 'edge': e}
-            else:
-                find_psu(c)
-    find_psu(root)
+    for c, node, e, _ in walk(root):
+        if c['shape'] == PSU and node is not None:
+            psu = {'chunk': node.get('chunk'), 'edge': e}   # the last one, as before
     if psu:
         host = next(p for p in ps if p['chunk'] == psu['chunk'])
         psu['x'], psu['y'] = _connector_xy(host, psu['edge'])
@@ -252,18 +278,8 @@ def links(root):
     """Pairs of chunk indices joined directly by a connector (the bus tree
     without the power supply). Neighbours that touch without a link, as in
     rings (§7.7), are not included; see neighbours()."""
-    out = []
-
-    def walk(n):
-        for e in sorted(n['children']):
-            c = n['children'][e]
-            if c['shape'] == PSU:
-                continue
-            if 'chunk' in n and 'chunk' in c:
-                out.append([n['chunk'], c['chunk']])
-            walk(c)
-    walk(root)
-    return out
+    return [[n['chunk'], c['chunk']] for c, n, _, _ in walk(root, sort=True)
+            if n is not None and c['shape'] != PSU and 'chunk' in n and 'chunk' in c]
 
 
 def inradius(shape, side):
@@ -322,37 +338,44 @@ def neighbours(positions, tree_links=()):
     return [sorted(s) for s in adj]
 
 
-def tree_json(node):
-    """The parsed tree as plain JSON: connector -> child, PSU as {'psu': True}."""
-    if node['shape'] == PSU:
-        return {'psu': True}
-    out = {'chunk': node.get('chunk'), 'connectors': node['edges'],
-           'root_edge': node['root_edge'], 'shape': node['shape'],
-           'x': round(node.get('x', 0), 1), 'y': round(node.get('y', 0), 1),
-           'o': int(node.get('o', 0))}
-    kids = {}
-    for e, c in node['children'].items():
-        kids[str(e)] = tree_json(c)
-    if kids:
-        out['children'] = kids
+def tree_json(root):
+    """The parsed tree as a flat JSON list in string order. Each entry names
+    its parent (index into the list, -1 for the master panel) and the
+    parent's connector it hangs on; a power supply is {'psu': True, ...}.
+    Flat on purpose: nested, every panel of a chain adds two levels of
+    recursion to the JSON encoder (see parse())."""
+    out = []
+    at = {}
+    for n, p, e, _ in walk(root, sort=True):
+        at[id(n)] = len(out)
+        d = {'parent': at[id(p)] if p is not None else -1, 'edge': e}
+        if n['shape'] == PSU:
+            d['psu'] = True
+        else:
+            d.update({'chunk': n.get('chunk'), 'connectors': n['edges'],
+                      'root_edge': n['root_edge'], 'shape': n['shape'],
+                      'x': round(n.get('x', 0), 1), 'y': round(n.get('y', 0), 1),
+                      'o': int(n.get('o', 0))})
+        out.append(d)
     return out
 
 
-def tree_text(node, indent=0):
+def tree_text(root, indent=0):
     """Human-readable tree, one node per line."""
-    pad = '  ' * indent
-    if node['shape'] == PSU:
-        return pad + 'PSU\n'
-    root = node['root_edge']
-    if root is None:
-        root = '?->%s' % node.get('guessed_edge', '?')
-    s = '%s0x%02x %-13s connectors=%d root=%s chunk=%s pos=(%.1f, %.1f) o=%d\n' % (
-        pad, node['hdr'], SHAPE_NAMES.get(node['shape'], '?'), node['edges'], root,
-        node.get('chunk'), node.get('x', 0), node.get('y', 0), node.get('o', 0))
-    for e in sorted(node['children']):
-        c = node['children'][e]
-        s += pad + '  connector %d -> ' % e + tree_text(c, indent + 1).lstrip()
-    return s
+    lines = []
+    for n, p, e, d in walk(root, sort=True):
+        pad = '  ' * (indent + d - 1) + '  connector %d -> ' % e if p is not None \
+            else '  ' * indent
+        if n['shape'] == PSU:
+            lines.append(pad + 'PSU\n')
+            continue
+        r = n['root_edge']
+        if r is None:
+            r = '?->%s' % n.get('guessed_edge', '?')
+        lines.append('%s0x%02x %-13s connectors=%d root=%s chunk=%s pos=(%.1f, %.1f) o=%d\n' % (
+            pad, n['hdr'], SHAPE_NAMES.get(n['shape'], '?'), n['edges'], r,
+            n.get('chunk'), n.get('x', 0), n.get('y', 0), n.get('o', 0)))
+    return ''.join(lines)
 
 
 def polygon(p):
