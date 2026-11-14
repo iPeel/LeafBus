@@ -197,6 +197,8 @@ def panels(root):
 
 def _connector_xy(p, e):
     """World position of connector e of a placed panel, rounded."""
+    if p['shape'] not in SIDE:  # unknown subtype: no connector geometry
+        return [round(p['x'], 2), round(p['y'], 2)]
     x, y = rot(*edge_vec(p['shape'], e), p['o'])
     return [round(p['x'] + x, 2), round(p['y'] + y, 2)]
 
@@ -234,6 +236,8 @@ def layout(raw):
         psu['x'], psu['y'] = _connector_xy(host, psu['edge'])
     positions = []
     for p in sorted(ps, key=lambda p: p['chunk']):
+        if 'x' not in p:  # below a panel of unknown shape: no coordinates
+            p['x'], p['y'], p['o'] = 0.0, 0.0, 0.0
         edge = p.get('guessed_edge', 0) if p['root_edge'] is None else p['root_edge']
         d = {'chunk': p['chunk'], 'x': round(p['x'], 2), 'y': round(p['y'], 2),
              'o': int(p['o']), 'shape': p['shape'], 'side': SIDE.get(p['shape']),
@@ -241,7 +245,97 @@ def layout(raw):
         if p['root_edge'] is None:
             d['guessed'] = True
         positions.append(d)
-    return {'psu': psu, 'positions': positions, 'tree': root}
+    return {'psu': psu, 'positions': positions, 'links': links(root), 'tree': root}
+
+
+def links(root):
+    """Pairs of chunk indices joined directly by a connector (the bus tree
+    without the power supply). Neighbours that touch without a link, as in
+    rings (§7.7), are not included; see neighbours()."""
+    out = []
+
+    def walk(n):
+        for e in sorted(n['children']):
+            c = n['children'][e]
+            if c['shape'] == PSU:
+                continue
+            if 'chunk' in n and 'chunk' in c:
+                out.append([n['chunk'], c['chunk']])
+            walk(c)
+    walk(root)
+    return out
+
+
+def inradius(shape, side):
+    if shape == HEXAGON:
+        return side * math.sqrt(3) / 2
+    if shape in (TRIANGLE, MINI_TRIANGLE):
+        return side / (2 * math.sqrt(3))
+    return None
+
+
+def connector_points(p):
+    """World positions of all connectors of a placed panel (positionData
+    entry), or [] for unknown shapes."""
+    shape = p.get('shape')
+    if shape not in SIDE:
+        return []
+    n = 6 if shape in (HEXAGON, TRIANGLE) else 3
+    out = []
+    for e in range(n):
+        x, y = rot(*edge_vec(shape, e), p.get('o', 0))
+        out.append((p['x'] + x, p['y'] + y))
+    return out
+
+
+def neighbours(positions, tree_links=()):
+    """Adjacency list by chunk: panels that touch, plus every bus link.
+
+    Two panels touch exactly when they have a connector at the same point:
+    every connector sits at the midpoint of a 67 mm lattice edge (§7.6).
+    A distance test between centres does not work: a Mini Triangle on a
+    Triangle's side sits off-centre, 67 mm away, as far as panels that only
+    share a corner."""
+    n = len(positions)
+    adj = [set() for _ in range(n)]
+    for a, b in tree_links:
+        if a < n and b < n:
+            adj[a].add(b)
+            adj[b].add(a)
+    # hash connectors into 2 mm cells; coinciding ones (< 1 mm apart, the
+    # coordinates are rounded) are in the same or a neighbouring cell
+    grid = {}
+    pts = []
+    for i in range(n):
+        for x, y in connector_points(positions[i]):
+            k = (int(x // 2), int(y // 2))
+            grid.setdefault(k, []).append(len(pts))
+            pts.append((x, y, i))
+    for x, y, i in pts:
+        cx, cy = int(x // 2), int(y // 2)
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for j in grid.get((cx + dx, cy + dy), ()):
+                    x2, y2, b = pts[j]
+                    if b != i and abs(x2 - x) < 1 and abs(y2 - y) < 1:
+                        adj[i].add(b)
+    return [sorted(s) for s in adj]
+
+
+def tree_json(node):
+    """The parsed tree as plain JSON: connector -> child, PSU as {'psu': True}."""
+    if node['shape'] == PSU:
+        return {'psu': True}
+    out = {'chunk': node.get('chunk'), 'connectors': node['edges'],
+           'root_edge': node['root_edge'], 'shape': node['shape'],
+           'x': round(node.get('x', 0), 1), 'y': round(node.get('y', 0), 1),
+           'o': int(node.get('o', 0))}
+    kids = {}
+    for e, c in node['children'].items():
+        kids[str(e)] = tree_json(c)
+    if kids:
+        out['children'] = kids
+    return out
 
 
 def tree_text(node, indent=0):

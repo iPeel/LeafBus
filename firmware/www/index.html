@@ -1,0 +1,728 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0e1014">
+<title>LeafBus</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 3 30 27H2z' fill='%23ffb547'/%3E%3C/svg%3E">
+<style>
+:root{--bg:#0e1014;--panel:#171a21;--panel2:#1f232c;--line:#2a2f3a;--text:#e9ecf2;--dim:#9aa3b2;--faint:#677083;--accent:#ffb547;--accent2:#ff7a59;--ok:#3ccf8e;--bad:#ff5d6c;--r:14px;--shadow:0 1px 0 rgba(255,255,255,.03) inset,0 8px 24px rgba(0,0,0,.25)}
+@media (prefers-color-scheme:light){:root{--bg:#f3f4f7;--panel:#fff;--panel2:#f0f2f6;--line:#dfe3ea;--text:#151821;--dim:#5b6475;--faint:#8a93a3;--shadow:0 1px 2px rgba(0,0,0,.05),0 8px 24px rgba(20,30,60,.06)}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-tap-highlight-color:transparent}
+button,input,select{font:inherit;color:inherit}
+a{color:var(--accent)}
+header{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:12px;padding:10px 16px;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.logo{display:flex;align-items:center;gap:8px;font-weight:700;letter-spacing:.2px}
+.logo svg{width:22px;height:22px}
+.status{display:flex;align-items:center;gap:6px;color:var(--dim);font-size:13px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}
+.dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok)}.dot.bad{background:var(--bad)}
+.spacer{flex:1}
+nav.tabs{display:flex;gap:4px}
+nav.tabs button{background:none;border:0;padding:8px 12px;border-radius:10px;color:var(--dim);cursor:pointer;display:flex;align-items:center;gap:6px}
+nav.tabs button.on{background:var(--panel2);color:var(--text)}
+nav.tabs svg{width:18px;height:18px}
+main{max-width:1180px;margin:0 auto;padding:16px 16px 96px}
+.view{display:none}.view.on{display:block}
+.grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:860px){.grid{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;box-shadow:var(--shadow);margin-bottom:16px;min-width:0}
+.card h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);margin:0 0 12px;font-weight:600;display:flex;align-items:center;gap:8px}
+.card h2 .spacer{flex:1}
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.muted{color:var(--dim)}.small{font-size:13px}.faint{color:var(--faint)}
+.btn{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn:hover{border-color:var(--faint)}
+.btn.primary{background:var(--accent);color:#1b1205;border-color:transparent;font-weight:600}
+.btn.danger{color:var(--bad)}
+.btn.icon{padding:7px 9px}
+.btn.sm{padding:5px 10px;font-size:13px}
+.btn:disabled{opacity:.5;cursor:default}
+.btn svg{width:16px;height:16px}
+.power{width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--panel2);display:grid;place-items:center;cursor:pointer;flex:none}
+.power svg{width:20px;height:20px}
+.power.on{background:var(--accent);border-color:transparent;color:#1b1205;box-shadow:0 0 18px color-mix(in srgb,var(--accent) 55%,transparent)}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:28px;background:none;margin:0}
+input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:linear-gradient(90deg,var(--accent) var(--p,50%),var(--line) var(--p,50%))}
+input[type=range]::-moz-range-track{height:6px;border-radius:3px;background:linear-gradient(90deg,var(--accent) var(--p,50%),var(--line) var(--p,50%))}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:#fff;margin-top:-7px;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+input[type=range]::-moz-range-thumb{width:20px;height:20px;border:0;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+input[type=range]:disabled{opacity:.3}
+input[type=text],input[type=password],input[type=number],input[type=time],select{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 10px;min-width:0}
+input[type=number]{width:96px}
+input:focus,select:focus,button:focus-visible{outline:2px solid color-mix(in srgb,var(--accent) 70%,transparent);outline-offset:1px}
+label.f{display:grid;gap:4px;margin-bottom:12px}
+label.f>span{font-size:13px;color:var(--dim)}
+.toggle{position:relative;width:42px;height:24px;flex:none}
+.toggle input{opacity:0;width:0;height:0;position:absolute}
+.toggle i{position:absolute;inset:0;border-radius:12px;background:var(--line);transition:.15s;cursor:pointer}
+.toggle i::after{content:"";position:absolute;width:18px;height:18px;left:3px;top:3px;border-radius:50%;background:#fff;transition:.15s}
+.toggle input:checked+i{background:var(--accent)}
+.toggle input:checked+i::after{transform:translateX(18px)}
+.seg{display:inline-flex;flex-wrap:wrap;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:3px;gap:2px}
+.seg button{border:0;background:none;padding:5px 10px;border-radius:7px;cursor:pointer;color:var(--dim);font-size:13px}
+.seg button.on{background:var(--panel);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.25)}
+/* preview */
+.stage{position:relative;border-radius:12px;background:radial-gradient(ellipse at 50% 40%,#1b1f27,#0b0d11);overflow:hidden;aspect-ratio:16/10;display:grid;place-items:center}
+@media (prefers-color-scheme:light){.stage{background:radial-gradient(ellipse at 50% 40%,#2a2f3a,#14171d)}}
+.stage svg{width:100%;height:100%;display:block}
+.stage .hint{position:absolute;left:12px;bottom:10px;font-size:12px;color:#aab2c0;pointer-events:none;text-shadow:0 1px 2px #000}
+.stage .tag{position:absolute;right:10px;top:10px;font-size:12px;padding:3px 8px;border-radius:20px;background:rgba(0,0,0,.45);color:#dfe4ec}
+.panel-shape{cursor:pointer;transition:fill .25s linear}
+.panel-shape.sel{stroke:#fff;stroke-width:2.2}
+.panel-shape.off{opacity:.25}
+.panel-shape.touch{stroke:#fff;stroke-width:3}
+.plabel{font-family:system-ui,sans-serif;font-weight:600;font-size:1em;fill:#fff;paint-order:stroke;stroke:rgba(0,0,0,.55);stroke-width:.25em;pointer-events:none;text-anchor:middle;dominant-baseline:middle}
+.plabel.name{font-weight:500;font-size:.8em}
+.bri{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;margin-top:14px}
+.bri svg{width:18px;height:18px;color:var(--dim)}
+.val{font-variant-numeric:tabular-nums;color:var(--dim);font-size:13px;min-width:3ch;text-align:right}
+/* effects */
+.effects{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px}
+.fx{position:relative;border:1px solid var(--line);border-radius:12px;background:var(--panel2);padding:0;cursor:pointer;text-align:left;overflow:hidden}
+.fx .sw{height:38px;background:#333}
+.fx .nm{padding:7px 10px 8px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:4px}
+.fx .nm svg{width:12px;height:12px;color:var(--dim)}
+.fx.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.desc{color:var(--dim);font-size:13px;margin:-4px 0 14px}
+/* params */
+.param{margin-bottom:14px}
+.param>.lab{display:flex;justify-content:space-between;font-size:13px;color:var(--dim);margin-bottom:4px}
+.swatches{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.swatch{position:relative;width:34px;height:34px;border-radius:9px;border:2px solid rgba(255,255,255,.15);overflow:hidden;cursor:pointer;flex:none}
+.swatch input{position:absolute;inset:-8px;width:60px;height:60px;opacity:0;cursor:pointer}
+.swatch .x{position:absolute;right:-1px;top:-1px;width:15px;height:15px;border-radius:0 0 0 7px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;line-height:15px;text-align:center;display:none}
+.swatch:hover .x{display:block}
+.gbar{height:10px;border-radius:5px;margin-top:8px}
+.pals{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.pals button{border:1px solid var(--line);background:none;border-radius:20px;padding:2px 4px 2px 2px;display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--dim)}
+.pals i{display:block;width:34px;height:16px;border-radius:10px}
+/* presets */
+.presets{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:stretch;border:1px solid var(--line);border-radius:22px;background:var(--panel2);overflow:hidden}
+.chip>button{background:none;border:0;cursor:pointer;padding:7px 4px 7px 12px;display:flex;align-items:center;gap:8px}
+.chip>button.more{padding:7px 9px 7px 4px;color:var(--faint)}
+.chip i{width:14px;height:14px;border-radius:50%;flex:none}
+.chip.on{border-color:var(--accent)}
+.chip .star{color:var(--accent);font-size:12px}
+.menu{position:fixed;z-index:50;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.45);padding:6px;min-width:190px}
+.menu button{display:block;width:100%;text-align:left;background:none;border:0;padding:8px 10px;border-radius:8px;cursor:pointer}
+.menu button:hover{background:var(--panel2)}
+/* layout */
+.layout-wrap{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start}
+@media (max-width:860px){.layout-wrap{grid-template-columns:minmax(0,1fr)}}
+.stage.big{aspect-ratio:auto;height:min(64vh,560px)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13px}
+.kv b{font-weight:500;color:var(--dim)}
+.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;word-break:break-all}
+details summary{cursor:pointer;color:var(--dim);font-size:13px}
+pre{white-space:pre-wrap;margin:8px 0 0}
+.banner{border-radius:12px;padding:10px 14px;margin-bottom:16px;font-size:14px;border:1px solid}
+.banner.warn{background:color-mix(in srgb,var(--accent) 12%,transparent);border-color:color-mix(in srgb,var(--accent) 45%,transparent)}
+.banner.bad{background:color-mix(in srgb,var(--bad) 12%,transparent);border-color:color-mix(in srgb,var(--bad) 45%,transparent)}
+/* schedule */
+.entry{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;gap:10px 12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+.entry:last-of-type{border-bottom:0}
+.days{display:flex;gap:4px;flex-wrap:wrap}
+.days button{width:30px;height:30px;border-radius:50%;border:1px solid var(--line);background:none;cursor:pointer;font-size:12px;color:var(--dim)}
+.days button.on{background:var(--accent);color:#1b1205;border-color:transparent;font-weight:600}
+.entry .act{display:flex;gap:8px;flex-wrap:wrap;grid-column:3/5}
+@media (max-width:620px){.entry{grid-template-columns:auto 1fr auto}.entry .remove{grid-column:3;grid-row:1}.entry .days{grid-column:1/4}.entry .act{grid-column:1/4}}
+.empty{color:var(--dim);text-align:center;padding:24px 8px}
+.netlist{display:grid;gap:4px;margin:-4px 0 12px}
+.netlist button{display:flex;justify-content:space-between;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer}
+.radio{display:grid;gap:8px;margin-bottom:12px}
+.radio label{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:10px;cursor:pointer;background:var(--panel2)}
+.radio label:has(input:checked){border-color:var(--accent)}
+.radio input{margin-top:3px;accent-color:var(--accent)}
+.radio small{display:block;color:var(--dim)}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:#232833;color:#fff;border:1px solid #333a48;padding:10px 16px;border-radius:12px;opacity:0;transition:.2s;z-index:60;pointer-events:none;max-width:90vw;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+.toast.on{opacity:1;transform:translateX(-50%)}
+.toast.bad{border-color:var(--bad)}
+dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:16px;padding:20px;max-width:min(420px,92vw);width:100%}
+dialog::backdrop{background:rgba(0,0,0,.55)}
+dialog h3{margin:0 0 12px}
+dialog .row{justify-content:flex-end;margin-top:16px}
+.offline{display:none;position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:30;background:var(--bad);color:#fff;padding:6px 14px;border-radius:20px;font-size:13px}
+.offline.on{display:block}
+@media (max-width:720px){
+  header{padding:8px 12px;backdrop-filter:none;background:var(--bg)}
+  nav.tabs{position:fixed;left:0;right:0;bottom:0;justify-content:space-around;background:var(--panel);border-top:1px solid var(--line);padding:6px 6px calc(6px + env(safe-area-inset-bottom));z-index:25}
+  nav.tabs button{flex-direction:column;gap:2px;font-size:11px;padding:6px 10px}
+  nav.tabs svg{width:22px;height:22px}
+  main{padding:12px 12px 100px}
+  .toast{bottom:calc(84px + env(safe-area-inset-bottom))}
+  .card{padding:14px}
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="i-power" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3 21 19H3z"/></symbol>
+    <symbol id="i-layout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M7 3 12 11H2zM17 3l5 8H12zM12 11l5 8H7z"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+    <symbol id="i-hand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11V5a1.5 1.5 0 0 1 3 0v6M12 10V4a1.5 1.5 0 0 1 3 0v7M15 10.5V6a1.5 1.5 0 0 1 3 0v8a7 7 0 0 1-7 7h-.5a6 6 0 0 1-5-2.7L3 14.5a1.6 1.6 0 0 1 2.6-1.8L9 15V8a1.5 1.5 0 0 1 3 0"/></symbol>
+    <symbol id="i-rot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></symbol>
+    <symbol id="i-rotl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 12a8 8 0 1 0 2.3-5.7M4 4v5h5"/></symbol>
+    <symbol id="i-flip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3v18M9 7 3 17h6zM15 7l6 10h-6z"/></symbol>
+    <symbol id="i-scan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.5 6.2L3 16M3 21v-5h5"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-dots" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></symbol>
+    <symbol id="i-snow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v20M4 7l16 10M20 7 4 17"/></symbol>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+</svg>
+
+<header>
+  <div class="logo"><svg viewBox="0 0 32 32"><path d="M16 3 30 27H2z" fill="#ffb547"/><path d="M16 11 23 23H9z" fill="#ff7a59"/></svg><span id="devname">LeafBus</span></div>
+  <div class="status"><span class="dot" id="dot"></span><span id="status">connecting…</span></div>
+  <div class="spacer"></div>
+  <nav class="tabs" id="tabs">
+    <button data-v="play" class="on"><svg><use href="#i-play"/></svg>Play</button>
+    <button data-v="layout"><svg><use href="#i-layout"/></svg>Layout</button>
+    <button data-v="schedule"><svg><use href="#i-clock"/></svg>Schedule</button>
+    <button data-v="settings"><svg><use href="#i-gear"/></svg>Settings</button>
+  </nav>
+  <button class="power" id="power" title="Power"><svg><use href="#i-power"/></svg></button>
+</header>
+<div class="offline" id="offline">Board not reachable — retrying</div>
+
+<main>
+<!-- PLAY -->
+<section class="view on" id="v-play">
+  <div id="play-banner"></div>
+  <div class="grid">
+    <div>
+      <div class="card">
+        <div class="stage" id="stage"><span class="tag" id="srctag"></span><span class="hint" id="stagehint">Tap a panel to touch it</span></div>
+        <div class="bri">
+          <svg><use href="#i-sun"/></svg>
+          <input type="range" id="bri" min="0" max="255" value="255">
+          <span class="val" id="briv">100%</span>
+        </div>
+        <div class="row small muted" style="margin-top:8px">
+          <span>Sleep timer</span>
+          <select id="timer"><option value="0">off</option><option value="15">15 min</option><option value="30">30 min</option><option value="60">1 h</option><option value="120">2 h</option><option value="240">4 h</option></select>
+          <span id="timerleft" class="faint"></span>
+          <span class="spacer"></span>
+          <button class="btn sm" id="freeze" title="Turn what is showing now into a scene you can paint and save"><svg><use href="#i-snow"/></svg>Freeze</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Presets<span class="spacer"></span><button class="btn sm" id="savepreset"><svg><use href="#i-plus"/></svg>Save current</button></h2>
+        <div class="presets" id="presets"></div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <h2>Effects</h2>
+        <div class="effects" id="effects"></div>
+      </div>
+      <div class="card">
+        <h2 id="ptitle">Settings</h2>
+        <div class="desc" id="pdesc"></div>
+        <div id="params"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- LAYOUT -->
+<section class="view" id="v-layout">
+  <div id="layout-banner"></div>
+  <div class="layout-wrap">
+    <div class="card">
+      <h2>Assembly<span class="spacer"></span><span class="small faint" id="lsummary"></span></h2>
+      <div class="stage big" id="lstage"></div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn icon" id="rotl" title="Rotate left 30°"><svg><use href="#i-rotl"/></svg></button>
+        <input type="range" id="rot" min="0" max="359" value="0" style="flex:1;min-width:120px">
+        <button class="btn icon" id="rotr" title="Rotate right 30°"><svg><use href="#i-rot"/></svg></button>
+        <span class="val" id="rotv" style="min-width:4ch">0°</span>
+        <button class="btn icon" id="mirror" title="Mirror"><svg><use href="#i-flip"/></svg></button>
+      </div>
+      <div class="row small" style="margin-top:10px">
+        <span class="muted">Labels</span>
+        <div class="seg" id="labels"><button data-l="chunk" class="on">Numbers</button><button data-l="name">Names</button><button data-l="none">None</button></div>
+        <label class="row"><span class="toggle"><input type="checkbox" id="showtree"><i></i></span><span class="muted">Bus tree</span></label>
+        <span class="spacer"></span>
+        <button class="btn sm" id="rescan"><svg><use href="#i-scan"/></svg>Rescan</button>
+      </div>
+      <p class="small faint" style="margin:12px 0 0">Rotate and mirror until the picture matches your wall: effects use this view for left, right, up and down. The green dot is where the controller is attached, the blue ring is the power supply.</p>
+    </div>
+    <div>
+      <div class="card" id="inspector">
+        <h2>Panel</h2>
+        <div class="empty small">Select a panel in the picture.</div>
+      </div>
+      <div class="card">
+        <h2>Layout string</h2>
+        <div class="mono" id="rawstr"></div>
+        <details style="margin-top:10px"><summary>Tree</summary><pre class="mono" id="treetxt"></pre></details>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SCHEDULE -->
+<section class="view" id="v-schedule">
+  <div class="card">
+    <h2>Schedule<span class="spacer"></span><span class="small faint" id="clock"></span></h2>
+    <div id="sched-banner"></div>
+    <div id="entries"></div>
+    <div class="row" style="margin-top:12px">
+      <button class="btn" id="addentry"><svg><use href="#i-plus"/></svg>Add</button>
+      <span class="spacer"></span>
+      <span class="small faint" id="scheddirty"></span>
+      <button class="btn primary" id="savesched">Save schedule</button>
+    </div>
+  </div>
+  <p class="small faint">Times are local to the timezone set under Settings → Device. The clock comes from the Internet (NTP) once the board is on your Wi-Fi; daylight saving time is not switched automatically.</p>
+</section>
+
+<!-- SETTINGS -->
+<section class="view" id="v-settings">
+  <div class="grid">
+    <div>
+      <div class="card">
+        <h2>On power-up</h2>
+        <div class="radio" id="startmode">
+          <label><input type="radio" name="sm" value="last"><span>Resume<small>Whatever was playing, at the same brightness — and stay off if it was off.</small></span></label>
+          <label><input type="radio" name="sm" value="preset"><span>Always play a preset<small id="smpreset-hint">Pick it below.</small></span></label>
+          <label><input type="radio" name="sm" value="off"><span>Stay dark<small>Panels off until you turn them on.</small></span></label>
+        </div>
+        <label class="f" id="smpreset-row"><span>Startup preset</span><select id="smpreset"></select></label>
+        <label class="f"><span>Startup brightness</span>
+          <div class="row"><label class="row small"><span class="toggle"><input type="checkbox" id="smbkeep"><i></i></span>keep last</label><input type="range" id="smb" min="0" max="255" style="flex:1"><span class="val" id="smbv"></span></div>
+        </label>
+        <div class="row"><span class="spacer"></span><button class="btn primary" data-save="startup">Save</button></div>
+      </div>
+      <div class="card">
+        <h2>Touch</h2>
+        <label class="f"><span>Tap a panel</span><select id="ttap"></select></label>
+        <label class="f"><span>Hold a panel (0.8 s)</span><select id="thold"></select></label>
+        <p class="small faint" style="margin-top:0">"Effect reacts" starts a ripple, a sparkle or a new walker in effects that support touch (marked <svg width="12" height="12"><use href="#i-hand"/></svg>). Any touch wakes the panels when they are off. Single panels can get their own actions in the Layout tab.</p>
+        <div class="row"><span class="spacer"></span><button class="btn primary" data-save="touch">Save</button></div>
+      </div>
+      <div class="card">
+        <h2>Network streams</h2>
+        <label class="row" style="margin-bottom:12px"><span class="toggle"><input type="checkbox" id="sten"><i></i></span><span>Accept DDP and E1.31 (xLights, LedFx, Hyperion…)</span></label>
+        <label class="f"><span>Give the panels back to the effect after (seconds without frames)</span><input type="number" id="stto" min="1" max="60"></label>
+        <div class="kv" id="streaminfo"></div>
+        <div class="row"><span class="spacer"></span><button class="btn primary" data-save="streams">Save</button></div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <h2>Wi-Fi</h2>
+        <label class="f"><span>Network</span><div class="row"><input type="text" id="wssid" style="flex:1" autocomplete="off"><button class="btn sm" id="wscan">Scan</button></div></label>
+        <div class="netlist" id="netlist"></div>
+        <label class="f"><span>Password</span><input type="password" id="wkey" autocomplete="new-password"></label>
+        <p class="small faint" style="margin-top:0">If the network cannot be joined the board opens its own access point so you can always get back here.</p>
+        <details><summary>Access point</summary>
+          <label class="f" style="margin-top:10px"><span>Name (empty: LeafBus-XXXX)</span><input type="text" id="apssid"></label>
+          <label class="f"><span>Password (8+ characters, empty: open)</span><input type="password" id="apkey" autocomplete="new-password"></label>
+        </details>
+        <div class="row" style="margin-top:12px"><span class="spacer"></span><button class="btn primary" data-save="wifi">Save &amp; connect</button></div>
+      </div>
+      <div class="card">
+        <h2>Device</h2>
+        <label class="f"><span>Name on the network (http://<b id="hn">leafbus</b>.local)</span><input type="text" id="host"></label>
+        <label class="f"><span>Timezone</span><div class="row"><select id="tz" style="flex:1"></select><button class="btn sm" id="tzbrowser">Use this device's</button></div></label>
+        <label class="f"><span>Time server</span><input type="text" id="ntp"></label>
+        <details><summary>Ports and pins (need a reboot)</summary>
+          <div class="row" style="margin-top:10px;align-items:flex-end">
+            <label class="f"><span>HTTP</span><input type="number" id="phttp"></label>
+            <label class="f"><span>DDP</span><input type="number" id="pddp"></label>
+            <label class="f"><span>E1.31</span><input type="number" id="pe131"></label>
+            <label class="f"><span>Universe</span><input type="number" id="puni"></label>
+            <label class="f"><span>Ch/panel</span><select id="pper"><option>3</option><option>4</option></select></label>
+            <label class="f"><span>TX pin</span><input type="number" id="ptx"></label>
+            <label class="f"><span>RX pin</span><input type="number" id="prx"></label>
+          </div>
+        </details>
+        <div class="row" style="margin-top:12px"><span class="spacer"></span><button class="btn primary" data-save="device">Save</button></div>
+      </div>
+      <div class="card">
+        <h2>About this board<span class="spacer"></span><button class="btn sm danger" id="reboot">Reboot</button></h2>
+        <div class="kv" id="info"></div>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<dialog id="dlg"><form method="dialog"><h3 id="dlgt"></h3><div id="dlgb"></div><div class="row"><button class="btn" value="cancel">Cancel</button><button class="btn primary" value="ok" id="dlgok">OK</button></div></form></dialog>
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+function h(tag,attrs,...kids){const e=document.createElement(tag);for(const k in attrs||{}){const v=attrs[k];if(v==null||v===false)continue;if(k==='class')e.className=v;else if(k==='style')e.style.cssText=v;else if(k.startsWith('on'))e.addEventListener(k.slice(2),v);else if(k==='html')e.innerHTML=v;else e.setAttribute(k,v===true?'':v)}for(const c of kids.flat())if(c!=null&&c!==false)e.append(c.nodeType?c:document.createTextNode(c));return e}
+const SVGNS='http://www.w3.org/2000/svg';
+function s(tag,attrs){const e=document.createElementNS(SVGNS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);return e}
+function icon(id){const e=s('svg',{});e.append(s('use',{href:'#'+id}));return e}
+
+/* ---------- API: one request at a time — the ESP32 has ~20 kB for all of TCP ---------- */
+const Q=[];let inflight=0;
+function api(path,body){return new Promise((res,rej)=>{Q.push({path,body,res,rej});pump()})}
+function pump(){while(inflight<1&&Q.length){const j=Q.shift();inflight++;
+  const o=j.body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(j.body)};
+  const ctl=new AbortController();const to=setTimeout(()=>ctl.abort(),j.path==='/api/wifi/scan'?15000:6000);o.signal=ctl.signal;
+  fetch(j.path,o).then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||r.statusText);online(true);j.res(d)})
+  .catch(e=>{if(e.name==='AbortError'||e instanceof TypeError)online(false);j.rej(e)})
+  .finally(()=>{clearTimeout(to);inflight--;pump()})}}
+let isOnline=true;function online(v){if(v===isOnline)return;isOnline=v;$('#offline').classList.toggle('on',!v);if(v)refreshAll()}
+function toast(msg,bad){const t=$('#toast');t.textContent=msg;t.className='toast on'+(bad?' bad':'');clearTimeout(t._t);t._t=setTimeout(()=>t.className='toast',bad?4000:2200)}
+function fail(e){toast(e.message||String(e),true)}
+
+/* ---------- colours ---------- */
+const PALETTES={
+ Rainbow:['#ff0000','#ffb000','#d0ff00','#00ff40','#00e0ff','#0040ff','#c000ff'],
+ Sunset:['#ff3c50','#ff8c28','#ffd020','#e8406a','#6a0a8a'],
+ Ocean:['#001848','#0060a0','#00c0c0','#40ffd0','#0090ff'],
+ Forest:['#0a3d12','#2f8f2f','#a8d040','#1f6b3a','#d0c040'],
+ Fire:['#000000','#600000','#e02000','#ff7000','#ffc040'],
+ Ice:['#e0f4ff','#80c8ff','#2060ff','#a0e0ff','#ffffff'],
+ Pastel:['#ffb3c6','#ffd6a5','#fdffb6','#caffbf','#9bf6ff','#bdb2ff'],
+ Neon:['#ff2a6d','#05d9e8','#d1f7ff','#7700ff','#00ff9f'],
+ Aurora:['#00ffa0','#00b4ff','#7a00ff','#00ff6a','#003c60'],
+ Candy:['#ff4fa3','#ffffff','#ff9ed2','#ff0066'],
+ Whites:['#ffb060ff','#ffd8a0ff','#ffffffff','#c0d8ffff'],
+};
+function hex2(c){c=(c||'').replace('#','');if(c.length===3)c=c.replace(/./g,'$&$&');const v=[0,0,0,0];for(let i=0;i<4&&i*2<c.length;i++)v[i]=parseInt(c.substr(i*2,2),16)||0;return v}
+function rgbOf(v,bri=1){const w=v[3]||0;const r=Math.min(255,v[0]+w),g=Math.min(255,v[1]+w*.85),b=Math.min(255,v[2]+w*.66);return `rgb(${r*bri|0},${g*bri|0},${b*bri|0})`}
+function css(c){return rgbOf(hex2(c))}
+function grad(cols,wrap){if(!cols||!cols.length)return '#444';const c=cols.map(css);if(wrap)c.push(c[0]);return c.length===1?c[0]:`linear-gradient(90deg,${c.join(',')})`}
+function to6(c){return '#'+c.replace('#','').slice(0,6).padEnd(6,'0')}
+function wOf(c){return hex2(c)[3]}
+function withW(c6,w){return w?c6+Number(w).toString(16).padStart(2,'0'):c6}
+
+/* ---------- state ---------- */
+const S={state:null,effects:[],fx:{},presets:[],layout:null,settings:null,info:null,view:'play',sel:null,labels:'chunk',brush:'#ff8a3c',paramsShown:null,touchedUntil:0,lastLocal:0};
+
+/* ---------- geometry ---------- */
+function polyOf(p){const sd=p.side;let r,a;if(p.shape===7){r=sd;a=[0,60,120,180,240,300]}else if(sd){r=sd/Math.sqrt(3);a=[-30,90,210]}else{r=20;a=[0,60,120,180,240,300]}
+  return a.map(d=>{const t=(d+p.o)*Math.PI/180;return [p.x+r*Math.cos(t),p.y+r*Math.sin(t)]})}
+function viewTf(){const c=S.layout&&S.layout.config||{};const a=(c.rotation||0)*Math.PI/180,ca=Math.cos(a),sa=Math.sin(a),m=c.mirror?-1:1;
+  return ([x,y])=>{x*=m;return [x*ca-y*sa,-(x*sa+y*ca)]}}
+
+/* Draw the assembly into a stage. opts: {big, onClick} -> {setColors(hex), setSel(), setTouch()} */
+function drawStage(el,opts){
+  el.querySelectorAll('svg.asm').forEach(x=>x.remove());
+  const L=S.layout;const n=L?L.panels:0;
+  const svg=s('svg',{class:'asm'});el.prepend(svg);
+  if(!L||!L.positions||!L.positions.length){
+    // no geometry: draw a row of hexagons in chunk order
+    const ps=[];for(let i=0;i<Math.max(1,n);i++)ps.push({chunk:i,x:i*60,y:0,o:0,shape:7,side:30});
+    return drawPolys(svg,ps,opts,null);
+  }
+  return drawPolys(svg,L.positions,opts,L);
+}
+function drawPolys(svg,ps,opts,L){
+  const tf=viewTf();const items=[];let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  for(const p of ps){const pts=polyOf(p).map(tf);const c=tf([p.x,p.y]);
+    const k=0.92;const ins=pts.map(([x,y])=>[c[0]+(x-c[0])*k,c[1]+(y-c[1])*k]);
+    for(const [x,y] of pts){x0=Math.min(x0,x);x1=Math.max(x1,x);y0=Math.min(y0,y);y1=Math.max(y1,y)}
+    items.push({p,pts:ins,c})}
+  const m=opts.big?28:18;svg.setAttribute('viewBox',`${x0-m} ${y0-m} ${x1-x0+2*m} ${y1-y0+2*m}`);svg.setAttribute('preserveAspectRatio','xMidYMid meet');
+  const glow=s('g',{filter:'url(#glow)'});svg.append(glow);
+  const cfg=L&&L.config||{disabled:[],names:{}};const dis=new Set(cfg.disabled||[]);
+  const shapes=[];
+  if(opts.big&&L&&$('#showtree').checked&&L.links){const g=s('g',{stroke:'rgba(255,255,255,.55)','stroke-width':1.5,'stroke-dasharray':'3 3'});
+    const cen={};items.forEach(it=>cen[it.p.chunk]=it.c);
+    for(const [a,b] of L.links)if(cen[a]&&cen[b])g.append(s('line',{x1:cen[a][0],y1:cen[a][1],x2:cen[b][0],y2:cen[b][1]}));
+    svg.append(g)}
+  for(const it of items){const e=s('polygon',{points:it.pts.map(q=>q.join(',')).join(' '),class:'panel-shape'+(dis.has(it.p.chunk)?' off':''),fill:'#20242c',stroke:'rgba(0,0,0,.6)','stroke-width':1.2,'stroke-linejoin':'round'});
+    e.addEventListener('click',ev=>{ev.stopPropagation();opts.onClick&&opts.onClick(it.p.chunk)});
+    glow.append(e);shapes[it.p.chunk]=e}
+  const fs=Math.max(10,Math.max(x1-x0,y1-y0)/30);   // labels scale with the drawing (units are mm)
+  const lab=s('g',{style:`font-size:${fs}px`});svg.append(lab);
+  const mode=opts.big?S.labels:'none';
+  if(mode!=='none')for(const it of items){const nm=cfg.names&&cfg.names[it.p.chunk];
+    if(mode==='chunk'||!nm){const t=s('text',{x:it.c[0],y:it.c[1],class:'plabel'});t.textContent=it.p.chunk;lab.append(t)}
+    else{const t=s('text',{x:it.c[0],y:it.c[1],class:'plabel name'});t.textContent=nm;lab.append(t)}}
+  if(opts.big&&L){
+    const master=L.positions.find(p=>p.chunk===L.panels-1);
+    if(master&&master.link){const q=tf(master.link);lab.append(s('circle',{cx:q[0],cy:q[1],r:fs*.45,fill:'#3ccf8e',stroke:'#0b0d11','stroke-width':fs*.12}))}
+    if(L.psu&&L.psu.x!=null){const q=tf([L.psu.x,L.psu.y]);lab.append(s('circle',{cx:q[0],cy:q[1],r:fs*.55,fill:'none',stroke:'#4aa3ff','stroke-width':fs*.2}))}
+  }
+  return {
+    setColors(hx,bri,touch){const t=new Set(touch||[]);for(let i=0;i<shapes.length;i++){const e=shapes[i];if(!e)continue;
+      const v=[0,1,2,3].map(k=>parseInt(hx.substr(i*8+k*2,2),16)||0);e.setAttribute('fill',v.some(x=>x)?rgbOf(v,bri):'#16191f');e.classList.toggle('touch',t.has(i))}},
+    setSel(i){shapes.forEach((e,k)=>e&&e.classList.toggle('sel',k===i))}
+  };
+}
+
+/* ---------- play view ---------- */
+let mini=null,big=null;
+function renderStages(){
+  mini=drawStage($('#stage'),{onClick:onMiniClick});
+  if(S.view==='layout'||big){big=drawStage($('#lstage'),{big:true,onClick:i=>{S.sel=i;big.setSel(i);renderInspector()}});big.setSel(S.sel)}
+  paintColors();
+}
+function paintColors(){const st=S.state;if(!st)return;const bri=st.power||st.source==='ddp'||st.source==='e131'?0.25+0.75*st.brightness/255:0;
+  mini&&mini.setColors(st.colors,bri,st.touch);big&&big.setColors(st.colors,bri,st.touch)}
+function onMiniClick(i){const st=S.state;if(!st)return;
+  if(st.effect==='scene'){const cols=(st.params.colors||[]).slice();cols[i]=S.brush;st.params.colors=cols;
+    const v=hex2(S.brush);const enc=v.map(x=>x.toString(16).padStart(2,'0')).join('');st.colors=st.colors.slice(0,i*8)+enc+st.colors.slice(i*8+8);paintColors();
+    sendParams({colors:cols});return}
+  api('/api/touch',{chunk:i}).then(applyState).catch(fail)}
+function renderHeader(){const st=S.state;if(!st)return;
+  $('#power').classList.toggle('on',st.power);
+  const fx=S.fx[st.effect];
+  const src={effect:(st.preset||(fx?fx.label:st.effect)),off:'Off',ddp:'DDP stream',e131:'E1.31 stream',identify:'Identify'}[st.source]||st.source;
+  $('#status').textContent=src+(st.source==='ddp'||st.source==='e131'?` · ${st.fps} fps`:'');
+  $('#dot').className='dot '+(st.source==='off'?'':'on');
+  $('#srctag').textContent=st.source==='effect'?(fx?fx.label:st.effect):src;
+  const b=$('#bri');if(document.activeElement!==b){b.value=st.brightness;setP(b)}
+  $('#briv').textContent=Math.round(st.brightness/2.55)+'%';
+  $('#timerleft').textContent=st.timer!=null?`${Math.ceil(st.timer)} min left`:'';
+  if(document.activeElement!==$('#timer')&&st.timer==null)$('#timer').value='0';
+  $('#stagehint').textContent=st.effect==='scene'?'Tap panels to paint them':(fx&&fx.touch?'Tap a panel to touch it':'');
+  const ban=$('#play-banner');ban.innerHTML='';
+  if(st.source==='ddp'||st.source==='e131')ban.append(h('div',{class:'banner warn'},`A ${st.source.toUpperCase()} stream is driving the panels; your effect comes back when it stops.`));
+  if(S.info&&S.info.bus_error)ban.append(h('div',{class:'banner bad'},'Panel bus: '+S.info.bus_error));
+}
+function setP(r){r.style.setProperty('--p',((r.value-r.min)/(r.max-r.min)*100)+'%')}
+function applyState(st){const prev=S.state;S.state=st;renderHeader();paintColors();
+  const sig=st.effect+'|'+JSON.stringify(st.params);
+  if(sig!==S.paramsShown&&Date.now()-S.lastLocal>1500){renderEffects();renderParams()}
+  if(!prev||prev.preset!==st.preset||prev.effect!==st.effect)renderPresets();}
+function renderEffects(){const box=$('#effects');box.innerHTML='';const st=S.state;
+  for(const e of S.effects){const on=st&&st.effect===e.name;
+    const P=on?st.params:Object.fromEntries(e.params.map(p=>[p.key,p.default]));
+    let bg='#333';if(P.colors&&e.name!=='scene')bg=grad(P.colors,true);else if(e.name==='scene')bg=grad(['#ff8a3c','#3c8aff','#8aff3c','#ff3c8a']);else if(P.color)bg=css(P.color);
+    if(e.name==='sunrise')bg='linear-gradient(90deg,#000,#600,#f60,#ffc080)';
+    box.append(h('button',{class:'fx'+(on?' on':''),title:e.desc,onclick:()=>pickEffect(e.name)},h('div',{class:'sw',style:'background:'+bg}),h('div',{class:'nm'},e.label,e.touch?icon('i-hand'):null)))}}
+function pickEffect(name){S.lastLocal=0;api('/api/state',{effect:name}).then(st=>{applyState(st);renderEffects();renderParams()}).catch(fail)}
+
+/* parameter changes: merged and sent one request at a time */
+let pend=null,sending=false;
+function sendParams(patch){S.lastLocal=Date.now();pend=Object.assign(pend||{},patch);if(!sending)flush()}
+function flush(){if(!pend){sending=false;return}sending=true;const p=pend;pend=null;
+  api('/api/state',{effect:S.state.effect,params:p}).then(st=>{S.state.params=st.params;S.state.preset=st.preset;S.paramsShown=st.effect+'|'+JSON.stringify(st.params);renderHeader();renderPresets()}).catch(fail).finally(()=>setTimeout(flush,90))}
+
+function renderParams(){const st=S.state;const e=st&&S.fx[st.effect];const box=$('#params');box.innerHTML='';
+  if(!e){$('#ptitle').textContent='Settings';$('#pdesc').textContent='';return}
+  S.paramsShown=st.effect+'|'+JSON.stringify(st.params);
+  $('#ptitle').textContent=e.label;$('#pdesc').textContent=e.desc;
+  for(const p of e.params){const v=st.params[p.key];const wrap=h('div',{class:'param'});
+    if(p.type==='int'){const val=h('span',{class:'val'},String(v));const r=h('input',{type:'range',min:p.min,max:p.max,value:v});setP(r);
+      r.addEventListener('input',()=>{setP(r);val.textContent=r.value;st.params[p.key]=+r.value;sendParams({[p.key]:+r.value})});
+      wrap.append(h('div',{class:'lab'},h('span',{},p.label),val),r)}
+    else if(p.type==='bool'){const c=h('input',{type:'checkbox'});c.checked=!!v;c.addEventListener('change',()=>{st.params[p.key]=c.checked;sendParams({[p.key]:c.checked})});
+      wrap.append(h('label',{class:'row'},h('span',{class:'toggle'},c,h('i')),h('span',{},p.label)))}
+    else if(p.type==='select'){const seg=h('div',{class:'seg'});for(const o of p.options){const b=h('button',{class:o===v?'on':'',onclick:()=>{[...seg.children].forEach(x=>x.classList.toggle('on',x===b));st.params[p.key]=o;sendParams({[p.key]:o})}},o);seg.append(b)}
+      wrap.append(h('div',{class:'lab'},h('span',{},p.label)),seg)}
+    else if(p.type==='color'){wrap.append(h('div',{class:'lab'},h('span',{},p.label)),colorControl(v,c=>{st.params[p.key]=c;sendParams({[p.key]:c})}))}
+    else if(p.type==='colors'){wrap.append(h('div',{class:'lab'},h('span',{},p.label)),paletteControl(v,cs=>{st.params[p.key]=cs;sendParams({[p.key]:cs})}))}
+    else if(p.type==='scene'){wrap.append(h('div',{class:'lab'},h('span',{},'Brush')),sceneControl())}
+    box.append(wrap)}
+}
+function colorControl(v,cb){const c6=to6(v);let w=wOf(v);
+  const sw=h('div',{class:'swatch',style:'background:'+css(v)});const inp=h('input',{type:'color',value:c6});sw.append(inp);
+  const wr=h('input',{type:'range',min:0,max:255,value:w,title:'White LEDs'});setP(wr);
+  const send=()=>{const c=withW(inp.value,w);sw.style.background=css(c);cb(c)};
+  inp.addEventListener('input',send);wr.addEventListener('input',()=>{w=+wr.value;setP(wr);send()});
+  return h('div',{class:'row',style:'flex-wrap:nowrap'},sw,h('span',{class:'small muted'},'white'),wr)}
+function paletteControl(cols,cb){const box=h('div');cols=cols.slice();
+  const draw=()=>{box.innerHTML='';const row=h('div',{class:'swatches'});
+    cols.forEach((c,i)=>{const sw=h('div',{class:'swatch',style:'background:'+css(c)});const inp=h('input',{type:'color',value:to6(c)});
+      inp.addEventListener('input',()=>{cols[i]=withW(inp.value,wOf(c));sw.style.background=css(cols[i]);bar.style.background=grad(cols,true);cb(cols.slice())});
+      sw.append(inp);if(cols.length>1)sw.append(h('span',{class:'x',onclick:ev=>{ev.preventDefault();ev.stopPropagation();cols.splice(i,1);draw();cb(cols.slice())}},'×'));row.append(sw)});
+    if(cols.length<16)row.append(h('button',{class:'btn icon',title:'Add colour',onclick:()=>{cols.push(cols[cols.length-1]||'#ffffff');draw();cb(cols.slice())}},icon('i-plus')));
+    const bar=h('div',{class:'gbar',style:'background:'+grad(cols,true)});
+    const pals=h('div',{class:'pals'});for(const k in PALETTES)pals.append(h('button',{onclick:()=>{cols=PALETTES[k].slice();draw();cb(cols.slice())}},h('i',{style:'background:'+grad(PALETTES[k])}),k));
+    box.append(row,bar,pals)};
+  draw();return box}
+function sceneControl(){const st=S.state;const sw=h('div',{class:'swatch',style:'background:'+S.brush});const inp=h('input',{type:'color',value:to6(S.brush)});sw.append(inp);
+  inp.addEventListener('input',()=>{S.brush=inp.value;sw.style.background=inp.value});
+  const recent=h('div',{class:'swatches'});const uniq=[...new Set(st.params.colors||[])].slice(0,10);
+  uniq.forEach(c=>recent.append(h('div',{class:'swatch',style:'width:24px;height:24px;background:'+css(c),title:c,onclick:()=>{S.brush=to6(c);inp.value=to6(c);sw.style.background=css(c)}})));
+  return h('div',{},h('div',{class:'row'},sw,h('button',{class:'btn sm',onclick:()=>{const cols=Array(st.panels).fill(S.brush);sendParams({colors:cols});st.params.colors=cols}},'Fill all'),h('span',{class:'small muted'},'then tap panels in the picture')),h('div',{style:'margin-top:8px'},recent))}
+
+/* presets */
+function renderPresets(){const box=$('#presets');box.innerHTML='';const st=S.state;const startup=S.settings&&S.settings.startup;
+  if(!S.presets.length)box.append(h('div',{class:'empty small'},'No presets yet — set up an effect and save it.'));
+  S.presets.forEach((p,i)=>{const fx=S.fx[p.effect];const P=Object.assign({},fx?Object.fromEntries(fx.params.map(q=>[q.key,q.default])):{},p.params);
+    const cols=p.effect==='sunrise'?['#600','#f60','#ffc080']:(P.colors&&P.colors.length?P.colors:(P.color?[P.color]:['#888']));
+    const isStart=startup&&startup.mode==='preset'&&startup.preset===p.name;
+    const chip=h('div',{class:'chip'+(st&&st.preset===p.name?' on':'')},
+      h('button',{onclick:()=>api('/api/state',{preset:p.name}).then(st=>{applyState(st);renderEffects();renderParams()}).catch(fail)},h('i',{style:'background:'+grad(cols.slice(0,6))}),p.name,isStart?h('span',{class:'star',title:'Plays on power-up'},'★'):null),
+      h('button',{class:'more',title:'More',onclick:ev=>presetMenu(ev,p,i)},icon('i-dots')));
+    chip.querySelector('.more svg').setAttribute('width',14);chip.querySelector('.more svg').setAttribute('height',14);
+    box.append(chip)})}
+function closeMenu(){const m=$('.menu');if(m)m.remove()}
+document.addEventListener('click',closeMenu);
+function presetMenu(ev,p,i){ev.stopPropagation();closeMenu();const r=ev.currentTarget.getBoundingClientRect();
+  const m=h('div',{class:'menu',onclick:e=>e.stopPropagation()},
+    h('button',{onclick:()=>{closeMenu();saveSettings({startup:{mode:'preset',preset:p.name}},`"${p.name}" plays on power-up`)}},'★ Play on power-up'),
+    h('button',{onclick:()=>{closeMenu();api('/api/presets',{name:p.name}).then(ps=>{S.presets=ps;renderPresets();toast('Updated '+p.name)}).catch(fail)}},'Replace with what is playing'),
+    i>0?h('button',{onclick:()=>{closeMenu();const names=S.presets.map(x=>x.name);names.splice(i,1);names.splice(i-1,0,p.name);api('/api/presets/order',{names}).then(ps=>{S.presets=ps;renderPresets()}).catch(fail)}},'← Move earlier'):null,
+    h('button',{class:'danger',style:'color:var(--bad)',onclick:()=>{closeMenu();ask('Delete preset?',h('p',{},`"${p.name}" will be removed.`),'Delete').then(ok=>ok&&api('/api/presets/delete',{name:p.name}).then(ps=>{S.presets=ps;renderPresets()}).catch(fail))}},'Delete'));
+  document.body.append(m);const mw=m.offsetWidth,mh=m.offsetHeight;
+  m.style.left=Math.max(8,Math.min(innerWidth-mw-8,r.right-mw))+'px';m.style.top=(r.bottom+mh+8>innerHeight?r.top-mh-6:r.bottom+6)+'px'}
+function ask(title,body,okText){return new Promise(res=>{const d=$('#dlg');$('#dlgt').textContent=title;const b=$('#dlgb');b.innerHTML='';b.append(body);$('#dlgok').textContent=okText||'OK';
+  d.onclose=()=>res(d.returnValue==='ok');d.showModal();const i=b.querySelector('input');if(i)setTimeout(()=>i.focus(),30)})}
+$('#savepreset').onclick=()=>{const st=S.state;const fx=S.fx[st.effect];const inp=h('input',{type:'text',value:st.preset||(fx?fx.label:''),maxlength:32,style:'width:100%'});
+  ask('Save preset',h('label',{class:'f'},h('span',{},'Name'),inp),'Save').then(ok=>{if(!ok||!inp.value.trim())return;api('/api/presets',{name:inp.value.trim()}).then(ps=>{S.presets=ps;S.state.preset=inp.value.trim();renderPresets();toast('Saved '+inp.value.trim())}).catch(fail)})};
+$('#freeze').onclick=()=>{const st=S.state;if(!st)return;const cols=[];for(let i=0;i<st.panels;i++){const v=hex2(st.colors.substr(i*8,8));cols.push('#'+v.map(x=>x.toString(16).padStart(2,'0')).join(''))}
+  api('/api/state',{effect:'scene',params:{colors:cols}}).then(st=>{applyState(st);renderEffects();renderParams();toast('Frozen into a scene — paint or save it')}).catch(fail)};
+
+$('#power').onclick=()=>api('/api/state',{power:'toggle'}).then(applyState).catch(fail);
+{const b=$('#bri');let t=null;b.addEventListener('input',()=>{setP(b);$('#briv').textContent=Math.round(b.value/2.55)+'%';clearTimeout(t);t=setTimeout(()=>api('/api/state',{brightness:+b.value}).then(applyState).catch(fail),80)})}
+$('#timer').onchange=()=>api('/api/state',{timer:+$('#timer').value}).then(applyState).catch(fail);
+
+/* ---------- layout view ---------- */
+function renderLayout(){const L=S.layout;if(!L)return;const c=L.config;
+  $('#rot').value=c.rotation;setP($('#rot'));$('#rotv').textContent=c.rotation+'°';$('#mirror').classList.toggle('primary',!!c.mirror);
+  $('#rawstr').textContent=(L.raw||'—').replace(/(..)/g,'$1 ').trim();
+  $('#lsummary').textContent=`${L.panels} panel${L.panels===1?'':'s'}`+(L.psu?' · power supply on panel '+L.psu.chunk:'');
+  $('#treetxt').textContent=L.tree?treeText(L.tree,0):'';
+  const ban=$('#layout-banner');ban.innerHTML='';
+  if(L.error)ban.append(h('div',{class:'banner bad'},L.error));
+  if(L.stale)ban.append(h('div',{class:'banner warn'},'The assembly changed since panel names and exclusions were saved; check them.'));
+  if(L.unstable)ban.append(h('div',{class:'banner warn'},'The layout string did not repeat while reading it; the picture may be off. Rescan to try again.'));
+  renderStages();renderInspector()}
+const SHAPES={7:'Hexagon',8:'Triangle',9:'Mini triangle'};
+function treeText(n,d){const pad='  '.repeat(d);if(n.psu)return pad+'power supply\n';let s=`${pad}chunk ${n.chunk} ${SHAPES[n.shape]||'unknown'} (root connector ${n.root_edge})\n`;
+  for(const k of Object.keys(n.children||{}).sort())s+=`${pad}  connector ${k} →\n`+treeText(n.children[k],d+2);return s}
+function actionOptions(sel,cur,withDefault){sel.innerHTML='';const opts=[['none','Nothing'],['effect','Effect reacts'],['next','Next preset'],['prev','Previous preset'],['power','Power on / off'],['bright','Step brightness']];
+  if(withDefault)sel.append(h('option',{value:''},'Same as all panels'));
+  for(const [v,t] of opts)sel.append(h('option',{value:v},t));
+  for(const p of S.presets)sel.append(h('option',{value:'preset:'+p.name},'Preset: '+p.name));
+  sel.value=cur||'';if(sel.value!==(cur||''))sel.append(h('option',{value:cur,selected:true},cur))}
+function renderInspector(){const box=$('#inspector');box.innerHTML='';box.append(h('h2',{},'Panel'));const L=S.layout;const i=S.sel;
+  if(!L||i==null||i>=L.panels){box.append(h('div',{class:'empty small'},'Select a panel in the picture.'));return}
+  const p=(L.positions||[]).find(q=>q.chunk===i)||{chunk:i};const c=L.config;const enabled=!(c.disabled||[]).includes(i);
+  const name=h('input',{type:'text',value:(c.names||{})[i]||'',placeholder:'e.g. top left',maxlength:24});
+  name.addEventListener('change',()=>{const names=Object.assign({},c.names);if(name.value.trim())names[i]=name.value.trim();else delete names[i];saveLayout({names})});
+  const en=h('input',{type:'checkbox'});en.checked=enabled;en.addEventListener('change',()=>{const d=new Set(c.disabled||[]);en.checked?d.delete(i):d.add(i);saveLayout({disabled:[...d]})});
+  const t=S.settings&&S.settings.touch||{panels:{}};const own=(t.panels||{})[i]||{};
+  const tap=h('select');actionOptions(tap,own.tap,true);const hold=h('select');actionOptions(hold,own.hold,true);
+  const saveTouch=()=>{const ps=Object.assign({},t.panels);const o={};if(tap.value)o.tap=tap.value;if(hold.value)o.hold=hold.value;if(Object.keys(o).length)ps[i]=o;else delete ps[i];saveSettings({touch:{panels:ps}},'Touch actions saved')};
+  tap.onchange=saveTouch;hold.onchange=saveTouch;
+  const nb=(L.neighbours||[])[i]||[];
+  box.append(h('div',{class:'row',style:'margin-bottom:12px'},h('b',{style:'font-size:22px'},'#'+i),h('span',{class:'muted'},SHAPES[p.shape]||'unknown shape'),h('span',{class:'spacer'}),
+      h('button',{class:'btn sm',onclick:()=>api('/api/identify',{chunk:i}).then(()=>toast('Panel '+i+' flashes white')).catch(fail)},'Identify'),
+      h('button',{class:'btn sm',title:'Act as if this panel was touched',onclick:()=>api('/api/touch',{chunk:i}).then(applyState).catch(fail)},icon('i-hand'),'Touch')),
+    h('label',{class:'f'},h('span',{},'Name'),name),
+    h('label',{class:'row',style:'margin-bottom:14px'},h('span',{class:'toggle'},en,h('i')),h('span',{},'Part of effects'),h('span',{class:'small faint'},enabled?'':'(kept dark)')),
+    h('label',{class:'f'},h('span',{},'Tap'),tap),h('label',{class:'f'},h('span',{},'Hold'),hold),
+    h('div',{class:'kv'},h('b',{},'Position'),h('span',{},p.x!=null?`${p.x.toFixed(1)}, ${p.y.toFixed(1)} mm`:'—'),h('b',{},'Orientation'),h('span',{},p.o!=null?p.o+'°':'—'),
+      h('b',{},'Neighbours'),h('span',{},nb.join(', ')||'—'),h('b',{},'Bus'),h('span',{},i===L.panels-1?'controller attached here':(p.guessed?'connector guessed':'—'))))}
+function saveLayout(patch){api('/api/layout',patch).then(L=>{S.layout=L;renderLayout()}).catch(fail)}
+{let t=null;const r=$('#rot');r.addEventListener('input',()=>{setP(r);$('#rotv').textContent=r.value+'°';S.layout.config.rotation=+r.value;renderStages();clearTimeout(t);t=setTimeout(()=>saveLayout({rotation:+r.value}),400)})}
+$('#rotl').onclick=()=>saveLayout({rotation:((S.layout.config.rotation+30)%360)});
+$('#rotr').onclick=()=>saveLayout({rotation:((S.layout.config.rotation+330)%360)});
+$('#mirror').onclick=()=>saveLayout({mirror:!S.layout.config.mirror});
+$('#rescan').onclick=()=>{$('#rescan').disabled=true;api('/api/layout/rescan',{}).then(L=>{S.layout=L;renderLayout();toast(`${L.panels} panels found`)}).catch(fail).finally(()=>$('#rescan').disabled=false)};
+$$('#labels button').forEach(b=>b.onclick=()=>{S.labels=b.dataset.l;$$('#labels button').forEach(x=>x.classList.toggle('on',x===b));renderStages()});
+$('#showtree').onchange=renderStages;
+
+/* ---------- schedule ---------- */
+let SCH=[],schDirty=false;
+const DAYS=['M','T','W','T','F','S','S'];
+function markSch(){schDirty=true;$('#scheddirty').textContent='unsaved changes'}
+function renderSchedule(){const box=$('#entries');box.innerHTML='';
+  const info=S.info;$('#clock').textContent=info&&info.time?'board time '+info.time.slice(11):'clock not set yet';
+  const ban=$('#sched-banner');ban.innerHTML='';if(info&&!info.time)ban.append(h('div',{class:'banner warn'},'The board has no clock yet. It sets it from the Internet once it is on your Wi-Fi; until then the schedule does not run.'));
+  if(!SCH.length)box.append(h('div',{class:'empty'},'Nothing scheduled. Add entries to turn the panels on, off or to a preset at set times — e.g. "Wake up" at 07:00 on weekdays.'));
+  SCH.forEach((e,k)=>{
+    const en=h('input',{type:'checkbox'});en.checked=e.enabled;en.onchange=()=>{e.enabled=en.checked;markSch()};
+    const tm=h('input',{type:'time',value:e.time});tm.onchange=()=>{e.time=tm.value;markSch()};
+    const days=h('div',{class:'days'});DAYS.forEach((d,i)=>{const b=h('button',{class:(e.days.length===0||e.days.includes(i))?'on':'',title:['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'][i],onclick:()=>{let ds=e.days.length?e.days.slice():[0,1,2,3,4,5,6];ds=ds.includes(i)?ds.filter(x=>x!==i):[...ds,i].sort();e.days=ds.length===7?[]:ds;markSch();renderSchedule()}},d);days.append(b)});
+    const act=h('select');[['preset','Play preset'],['on','Turn on'],['off','Turn off'],['brightness','Set brightness']].forEach(([v,t])=>act.append(h('option',{value:v},t)));act.value=e.action;
+    const pre=h('select');S.presets.forEach(p=>pre.append(h('option',{value:p.name},p.name)));pre.value=e.preset;if(!pre.value&&S.presets[0]){e.preset=S.presets[0].name;pre.value=e.preset}
+    const bk=h('select');[[-1,'brightness unchanged'],[255,'100 %'],[192,'75 %'],[128,'50 %'],[64,'25 %'],[20,'8 %']].forEach(([v,t])=>bk.append(h('option',{value:v},t)));bk.value=e.brightness;if(bk.value!=String(e.brightness))bk.append(h('option',{value:e.brightness,selected:true},Math.round(e.brightness/2.55)+' %'));
+    const sync=()=>{pre.style.display=e.action==='preset'?'':'none'};sync();
+    act.onchange=()=>{e.action=act.value;if(e.action==='brightness'&&e.brightness<0){e.brightness=128;bk.value=128}sync();markSch()};pre.onchange=()=>{e.preset=pre.value;markSch()};bk.onchange=()=>{e.brightness=+bk.value;markSch()};
+    box.append(h('div',{class:'entry'},h('span',{class:'toggle'},en,h('i')),tm,days,h('button',{class:'btn icon danger remove',title:'Remove',onclick:()=>{SCH.splice(k,1);markSch();renderSchedule()}},'×'),h('div',{class:'act'},act,pre,bk)))})}
+$('#addentry').onclick=()=>{SCH.push({enabled:true,time:'07:00',days:[0,1,2,3,4],action:'preset',preset:(S.presets.find(p=>p.effect==='sunrise')||S.presets[0]||{}).name||'',brightness:-1});markSch();renderSchedule()};
+$('#savesched').onclick=()=>saveSettings({schedule:SCH},'Schedule saved').then(()=>{schDirty=false;$('#scheddirty').textContent=''});
+
+/* ---------- settings ---------- */
+function saveSettings(patch,msg){return api('/api/settings',patch).then(r=>{S.settings=r.settings;fillSettings();renderPresets();toast((msg||'Saved')+(r.restart?' — reboot to apply':''));return r}).catch(e=>{fail(e);throw e})}
+const TZ_ODD=[-570,-210,-150,210,270,330,345,390,570,630,765,825];  // non-whole-hour offsets in use
+function tzList(){const ms=[];for(let m=-720;m<=840;m+=60)ms.push(m);ms.push(...TZ_ODD);ms.sort((a,b)=>a-b);
+  return ms.map(m=>{const a=Math.abs(m);return [m,`UTC${m<0?'-':'+'}${String(a/60|0).padStart(2,'0')}:${String(a%60).padStart(2,'0')}`]})}
+function fillSettings(){const c=S.settings;if(!c)return;
+  $$('#startmode input').forEach(r=>r.checked=r.value===c.startup.mode);syncStartMode();
+  const sp=$('#smpreset');sp.innerHTML='';S.presets.forEach(p=>sp.append(h('option',{value:p.name},p.name)));sp.value=c.startup.preset||(S.presets[0]||{}).name||'';
+  $('#smbkeep').checked=c.startup.brightness<0;$('#smb').value=c.startup.brightness<0?(S.state?S.state.brightness:255):c.startup.brightness;$('#smb').disabled=c.startup.brightness<0;setP($('#smb'));$('#smbv').textContent=c.startup.brightness<0?'':Math.round($('#smb').value/2.55)+'%';
+  actionOptions($('#ttap'),c.touch.tap);actionOptions($('#thold'),c.touch.hold);
+  $('#sten').checked=c.streams.enabled;$('#stto').value=c.streams.timeout;
+  $('#wssid').value=c.wifi.ssid||'';$('#wkey').value=c.wifi.key||'';$('#wkey').placeholder=c.wifi.key?'':'(none)';
+  $('#apssid').value=c.ap.ssid||'';$('#apkey').value=c.ap.key||'';
+  $('#host').value=c.hostname;$('#hn').textContent=c.hostname;$('#ntp').value=c.ntp;
+  const tz=$('#tz');if(!tz.options.length)tzList().forEach(([m,t])=>tz.append(h('option',{value:m},t)));tz.value=c.timezone;if(tz.value!=String(c.timezone))tz.append(h('option',{value:c.timezone,selected:true},c.timezone+' min'));
+  $('#phttp').value=c.http_port;$('#pddp').value=c.ddp_port;$('#pe131').value=c.e131_port;$('#puni').value=c.e131_universe;$('#pper').value=c.e131_channels_per_panel;$('#ptx').value=c.uart.tx;$('#prx').value=c.uart.rx;
+  if(!schDirty){SCH=JSON.parse(JSON.stringify(c.schedule||[]));if(S.view==='schedule')renderSchedule()}}
+function syncStartMode(){const m=($$('#startmode input').find(r=>r.checked)||{}).value;$('#smpreset-row').style.display=m==='preset'?'':'none';
+  $('#smpreset-hint').textContent=m==='preset'&&$('#smpreset').value?`"${$('#smpreset').value}" plays every time the board starts.`:'Pick it below.'}
+$$('#startmode input').forEach(r=>r.onchange=syncStartMode);$('#smpreset').onchange=syncStartMode;
+$('#smbkeep').onchange=()=>{$('#smb').disabled=$('#smbkeep').checked;$('#smbv').textContent=$('#smbkeep').checked?'':Math.round($('#smb').value/2.55)+'%'};
+$('#smb').oninput=()=>{setP($('#smb'));$('#smbv').textContent=Math.round($('#smb').value/2.55)+'%'};
+$('#tzbrowser').onclick=()=>{const m=-new Date().getTimezoneOffset();const tz=$('#tz');tz.value=m;if(tz.value!=String(m))tz.append(h('option',{value:m,selected:true},m+' min'))};
+const SAVERS={
+  startup:()=>({startup:{mode:($$('#startmode input').find(r=>r.checked)||{}).value||'last',preset:$('#smpreset').value,brightness:$('#smbkeep').checked?-1:+$('#smb').value}}),
+  touch:()=>({touch:{tap:$('#ttap').value,hold:$('#thold').value}}),
+  streams:()=>({streams:{enabled:$('#sten').checked,timeout:+$('#stto').value}}),
+  wifi:()=>({wifi:{ssid:$('#wssid').value.trim(),key:$('#wkey').value},ap:{ssid:$('#apssid').value.trim(),key:$('#apkey').value}}),
+  device:()=>({hostname:$('#host').value.trim(),timezone:+$('#tz').value,ntp:$('#ntp').value.trim(),http_port:+$('#phttp').value,ddp_port:+$('#pddp').value,e131_port:+$('#pe131').value,e131_universe:+$('#puni').value,e131_channels_per_panel:+$('#pper').value,uart:{tx:+$('#ptx').value,rx:+$('#prx').value}}),
+};
+$$('[data-save]').forEach(b=>b.onclick=()=>{const k=b.dataset.save;if(k==='wifi'&&!$('#wssid').value.trim()){toast('Enter a network name',true);return}
+  saveSettings(SAVERS[k](),k==='wifi'?'Saved — joining '+$('#wssid').value.trim():undefined).catch(()=>{})});
+$('#wscan').onclick=()=>{const b=$('#wscan');b.disabled=true;b.textContent='Scanning…';const list=$('#netlist');
+  api('/api/wifi/scan').then(nets=>{list.innerHTML='';if(!nets.length)list.append(h('div',{class:'small muted'},'No networks found'));
+    nets.slice(0,10).forEach(n=>list.append(h('button',{onclick:()=>{$('#wssid').value=n.ssid;list.innerHTML='';$('#wkey').value='';$('#wkey').focus()}},h('span',{},n.ssid+(n.secure?' 🔒':'')),h('span',{class:'faint small'},n.rssi+' dBm'))))}).catch(fail).finally(()=>{b.disabled=false;b.textContent='Scan'})};
+$('#reboot').onclick=()=>ask('Reboot the board?',h('p',{class:'muted'},'The panels go dark for a few seconds, then the startup effect plays.'),'Reboot').then(ok=>ok&&api('/api/reboot',{}).then(()=>toast('Rebooting…')).catch(fail));
+function fmtUp(s){const d=s/86400|0,hh=s%86400/3600|0,m=s%3600/60|0;return (d?d+'d ':'')+(d||hh?hh+'h ':'')+m+'m'}
+function renderInfo(){const i=S.info;if(!i)return;$('#devname').textContent=i.hostname==='leafbus'?'LeafBus':i.hostname;
+  const w=i.wifi||{};const rows=[['Firmware',i.version+' · MicroPython '+i.micropython],['Panels',i.panels+(i.bus_error?' (bus error)':'')],['Playing',i.source+' · '+i.fps+' fps'],
+    ['Wi-Fi',w.connected?`${w.ssid} · ${w.ip}${w.rssi!=null?' · '+w.rssi+' dBm':''}`:'not connected'],w.ap?['Access point',`${w.ap} · ${w.ap_ip}`]:null,
+    ['Clock',i.time||'not set'],['Uptime',fmtUp(i.uptime)],i.mem_free!=null?['Memory',`${(i.mem_free/1024).toFixed(0)} kB free of ${((i.mem_free+i.mem_alloc)/1024).toFixed(0)} kB`]:null,['Touch polling',i.touch_polling?'on':'off'],
+    i.bus_ms?['Bus timing',`push ${i.bus_ms.push} ms · poll ${i.bus_ms.poll} ms · ${i.loop_hz} loops/s`]:null,
+    i.errors?['Errors',`${i.errors} (last: ${i.last_error})`]:null,
+    i.last_crash?['Last crash',h('pre',{class:'mono',style:'margin:0'},i.last_crash)]:null].filter(Boolean);
+  const box=$('#info');box.innerHTML='';rows.forEach(([k,v])=>box.append(h('b',{},k),h('span',{},v)));
+  const si=$('#streaminfo');si.innerHTML='';if(i.ddp){const ip=w.ip||w.ap_ip||location.hostname;
+    si.append(h('b',{},'DDP'),h('span',{class:'mono'},`udp://${ip}:${i.ddp.port} · ${i.ddp.frames} frames`),h('b',{},'E1.31'),h('span',{class:'mono'},`universe ${i.e131.universe}${i.e131.group?' · '+i.e131.group:''} · ${i.e131.frames} frames`))}
+  si.style.marginBottom='12px';if(S.view==='schedule'&&!schDirty)renderSchedule()}
+
+/* ---------- navigation, polling ---------- */
+function show(v){S.view=v;$$('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));$$('.view').forEach(x=>x.classList.toggle('on',x.id==='v-'+v));
+  if(v==='layout'){renderLayout()}
+  if(v==='schedule'){loadInfo();renderSchedule()}
+  if(v==='settings'){loadInfo();fillSettings()}
+  try{localStorage.setItem('leafbus.view',v)}catch(e){}
+  if(location.hash!=='#'+v)history.replaceState(null,'','#'+v)}
+$$('#tabs button').forEach(b=>b.onclick=()=>show(b.dataset.v));
+addEventListener('hashchange',()=>{const v=location.hash.slice(1);if(v!==S.view&&['play','layout','schedule','settings'].includes(v))show(v)});
+function loadInfo(){return api('/api/info').then(i=>{S.info=i;renderInfo();renderHeader()}).catch(()=>{})}
+let polling=false;
+function poll(){if(polling||document.hidden)return;polling=true;api('/api/state').then(applyState).catch(()=>{}).finally(()=>polling=false)}
+setInterval(()=>{if(S.view==='play'||S.view==='layout')poll()},700);
+setInterval(()=>{if(S.view!=='play'&&S.view!=='layout')poll();loadInfo()},5000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll()});
+function refreshAll(){return Promise.all([
+  api('/api/effects').then(e=>{S.effects=e;S.fx=Object.fromEntries(e.map(x=>[x.name,x]))}),
+  api('/api/state').then(st=>{S.state=st}),
+  api('/api/presets').then(p=>S.presets=p),
+  api('/api/layout').then(L=>S.layout=L),
+]).then(()=>{renderEffects();renderParams();renderPresets();renderHeader();renderStages();if(S.view==='layout')renderLayout();
+  return Promise.all([api('/api/settings').then(c=>{S.settings=c;fillSettings();renderPresets()}),loadInfo()])}).catch(fail)}
+let v0='play';try{v0=(location.hash||'').slice(1)||localStorage.getItem('leafbus.view')||'play'}catch(e){}
+if(!['play','layout','schedule','settings'].includes(v0))v0='play';
+show(v0);refreshAll();
+addEventListener('resize',()=>{clearTimeout(window._rz);window._rz=setTimeout(renderStages,150)});
+</script>
+</body>
+</html>

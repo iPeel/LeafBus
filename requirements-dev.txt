@@ -1,2 +1,5 @@
 -r requirements.txt
 pytest
+mpremote    # tools/deploy.py
+esptool     # tools/deploy.py --flash
+mpy-cross   # tools/deploy.py without --flash, must match the board's MicroPython

@@ -1,6 +1,9 @@
 {
   "wifi": {"ssid": "your-network", "key": "your-password"},
+  "hostname": "leafbus",
   "uart": {"tx": 17, "rx": 16},
+  "startup": {"mode": "preset", "preset": "Warm white", "brightness": -1},
+  "timezone": 60,
   "ddp_port": 4048,
   "e131_port": 5568,
   "e131_universe": 1,

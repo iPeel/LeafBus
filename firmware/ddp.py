@@ -27,6 +27,7 @@ class DDPReceiver:
         self.sock.bind(('0.0.0.0', port))
         self.sock.settimeout(0)
         self.frames = 0
+        self.enabled = True   # False: packets are drained and dropped
 
     def tick(self):
         """Drain the socket and apply the newest frame. Older queued frames
@@ -41,6 +42,6 @@ class DDPReceiver:
                 continue
             length = (pkt[8] << 8) | pkt[9]
             latest = pkt[HDR:HDR + length]
-        if latest:
+        if latest and self.enabled:
             panelbus.apply_pixels(self.bus, latest)
             self.frames += 1

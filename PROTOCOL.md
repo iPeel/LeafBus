@@ -145,7 +145,8 @@ Reply latency grows with the hop count because every panel relays the bus (secti
 | node GET (`F8 … 8x`) | 400 ms for the far end of a 4-panel chain; 120 ms is too short |
 
 The bus is not the bottleneck: color frames at up to 40 per second with `C0` every 50 ms run without dropouts
-([Cptmeme][cpt]). The ~16 frames per second of `firmware/` are the limit of the MicroPython interpreter.
+([Cptmeme][cpt]). `firmware/` reaches 20 frames per second (its effect engine's cap) with `C0` every 120 ms; an earlier ~16 frames per
+second came from UART reads that waited for their 50 ms timeout, not from the bus.
 
 Two obligations of the master:
 

@@ -90,3 +90,19 @@ def test_positions_are_sorted_by_chunk_and_rounded():
     for p in lay['positions']:
         assert p['x'] == round(p['x'], 2) and p['y'] == round(p['y'], 2)
         assert p['side'] == g.SIDE[p['shape']]
+
+
+def test_neighbours_include_off_centre_contacts():
+    """A Mini Triangle on a Triangle's side sits off-centre: its centre is
+    67 mm away, yet the two share a connector (regression: the old centre
+    distance test missed this contact)."""
+    from mpshim import FOURTEEN
+    lay = g.layout(bytes.fromhex(FOURTEEN))
+    nb = g.neighbours(lay['positions'], lay['links'])
+    assert 13 in nb[6] and 6 in nb[13]
+    for a, b in lay['links']:
+        assert b in nb[a]
+    # symmetric, and nobody touches more panels than it has connectors
+    for i, ns in enumerate(nb):
+        assert all(i in nb[j] for j in ns)
+        assert len(ns) <= {g.HEXAGON: 6, g.TRIANGLE: 6, g.MINI_TRIANGLE: 3}[lay['positions'][i]['shape']]

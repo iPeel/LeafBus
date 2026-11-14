@@ -42,6 +42,7 @@ class E131Receiver:
         self.universe = universe
         self.per = per
         self.frames = 0
+        self.enabled = True   # False: packets are drained and dropped
         self.last_seq = None
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -90,6 +91,6 @@ class E131Receiver:
                     continue
             self.last_seq = seq
             latest = data
-        if latest:
+        if latest and self.enabled:
             panelbus.apply_pixels(self.bus, latest, self.per)
             self.frames += 1

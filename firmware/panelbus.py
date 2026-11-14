@@ -90,6 +90,11 @@ class PanelBus:
         self.npanels = 1
         self.nodes = []
         self.layout_unstable = False
+        self.colors = []      # last color sent to each panel, chunk order
+        self.pushes = 0       # bulk push frames sent
+        self.t_push = 0       # us, last frame without reply (drain + send)
+        self.t_reply = 0      # us, last exchange with reply
+        self.short_replies = 0  # replies that ran into the window
 
     # --- transport ------------------------------------------------------
     def _xact(self, frame, expect=0, wait_ms=40):
@@ -97,26 +102,39 @@ class PanelBus:
 
         expect: number of reply bytes, 0 for none, -1 for "up to TERMINATOR".
         The master hears its own echo on the single wire; it is stripped.
+
+        Reads take only the bytes already waiting (read(any())): a bare
+        read() keeps waiting for more until the UART timeout (50 ms) passes,
+        which stalled every frame on draining the previous frame's echo.
         """
-        while self.uart.any():
-            self.uart.read()
+        t0 = time.ticks_us()
+        n = self.uart.any()
+        while n:
+            self.uart.read(n)
+            n = self.uart.any()
         self.uart.write(frame)
         _tx_done(self.uart, len(frame))
         if expect == 0:
+            self.t_push = time.ticks_diff(time.ticks_us(), t0)
             return b''
         deadline = time.ticks_add(time.ticks_ms(), wait_ms)
         buf = b''
         while time.ticks_diff(deadline, time.ticks_ms()) > 0:
-            got = self.uart.read()
+            n = self.uart.any()
+            got = self.uart.read(n) if n else None
             if got:
                 buf += got
                 body = buf[len(frame):] if buf[:len(frame)] == frame else buf
                 if expect == -1:
                     if TERMINATOR in body:
+                        self.t_reply = time.ticks_diff(time.ticks_us(), t0)
                         return body
                 elif len(body) >= expect:
+                    self.t_reply = time.ticks_diff(time.ticks_us(), t0)
                     return body
             time.sleep_us(200)
+        self.t_reply = time.ticks_diff(time.ticks_us(), t0)
+        self.short_replies += 1
         return buf[len(frame):] if buf[:len(frame)] == frame else buf
 
     # --- enumeration (§5) ----------------------------------------------
@@ -208,6 +226,11 @@ class PanelBus:
             None                   leave this panel unchanged
         """
         out = bytearray([BULK_PUSH, 0x03])
+        n = self.npanels
+        if len(self.colors) != n:
+            self.colors = [(0, 0, 0, 0)] * n
+        last = self.colors
+        i = 0
         for c in colors:
             if c is None:
                 out += SKIP
@@ -215,7 +238,11 @@ class PanelBus:
                 w = c[3] if len(c) > 3 else 0
                 t = c[4] if len(c) > 4 else 1
                 out += chunk(c[0], c[1], c[2], w, t)
+                if i < n:
+                    last[i] = (c[0], c[1], c[2], w)
+            i += 1
         self._xact(bytes(out), expect=0)
+        self.pushes += 1
         return bytes(out)
 
     def fill(self, r, g, b, w=0, transition=1):
@@ -248,6 +275,19 @@ class PanelBus:
         if 0x01 not in raw:
             return None
         return raw[raw.index(0x01) + 1:]
+
+
+def touch_status(raw, npanels):
+    """Status byte per panel in chunk order from a bulk pull reply, or None
+    if the reply is short. The reply is in layout-string order (§6.3)."""
+    if not raw or len(raw) < 2 * npanels:
+        return None
+    return [raw[2 * k] for k in range(npanels - 1, -1, -1)]
+
+
+def is_touched(status):
+    """Touch test that also catches the 0x20 panel (§6.3)."""
+    return bool((status & 0x10) and (status & 0x0F))
 
 
 def apply_pixels(bus, data, per=None):

@@ -1,4 +1,10 @@
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'firmware'))
+HERE = os.path.dirname(__file__)
+sys.path.insert(0, os.path.join(HERE, '..', 'firmware'))
+sys.path.insert(0, os.path.join(HERE, '..', 'tools'))
+
+import mpshim  # noqa: E402
+
+mpshim.install()

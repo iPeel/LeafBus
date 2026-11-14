@@ -7,3 +7,5 @@ __pycache__/
 .pytest_cache/
 layout.json
 layout.svg
+.sim*/
+dist/
