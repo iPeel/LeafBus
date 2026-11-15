@@ -89,6 +89,48 @@ def test_bus_silent_still_starts(board, monkeypatch):
     assert http(a, 'GET', '/api/layout')[1]['error']
 
 
+def test_bus_lost_while_running_stops_polling_and_backs_off(board):
+    """A cable that stops carrying the signal after a good start: polls come
+    back empty, each waiting out its window. After a few the bus is marked
+    silent, polling stops and the retries space out."""
+    a = board()
+    bus = a.bus
+    pulls = []
+    real_pull = bus.bulk_pull
+    bus.bulk_pull = lambda wait_ms=None: pulls.append(1) or b''
+    bus.silent = True
+    t = time.ticks_add(a.last_rescan, appmod.RESCAN_MS)
+    for _ in range(appmod.DEAD_POLLS):
+        t = time.ticks_add(t, appmod.MAX_NOPOLL_MS)
+        a._poll(t)
+    assert a.bus_error and 'silent' in a.bus_error
+    assert len(pulls) == appmod.DEAD_POLLS
+    for _ in range(10):
+        t = time.ticks_add(t, appmod.MAX_NOPOLL_MS)
+        a._poll(t)
+    assert len(pulls) == appmod.DEAD_POLLS        # no polling a dead bus
+    first = a.bus_retry_ms
+    a.last_rescan = time.ticks_add(t, -first)
+    a._housekeeping(t)
+    assert a.bus_retry_ms == min(2 * first, appmod.BUS_RETRY_MAX_MS)
+    bus.silent = False
+    bus.bulk_pull = real_pull
+    a.last_rescan = time.ticks_add(t, -a.bus_retry_ms)
+    a._housekeeping(t)
+    assert not a.bus_error and a.bus.npanels == 14
+    assert a.bus_retry_ms == appmod.BUS_RETRY_MS
+
+
+def test_a_partial_poll_reply_is_not_a_lost_bus(board):
+    a = board()
+    a.bus.bulk_pull = lambda wait_ms=None: bytes(6)    # far panels missed the window
+    t = time.ticks_add(a.last_rescan, appmod.RESCAN_MS)
+    for _ in range(3 * appmod.DEAD_POLLS):
+        t = time.ticks_add(t, appmod.MAX_NOPOLL_MS)
+        a._poll(t)
+    assert not a.bus_error and a.dead_polls == 0
+
+
 # --- state and presets ---------------------------------------------------------
 
 def test_state_changes_and_persistence(board):

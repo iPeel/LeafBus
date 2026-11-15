@@ -2,6 +2,8 @@
 keep-alive that keeps the panels from dropping off a quiet bus."""
 import time
 
+import pytest
+
 import panelbus
 
 
@@ -112,3 +114,78 @@ def test_exchange_waits_for_a_keepalive_reply_to_finish(monkeypatch):
     bus.last_ka = time.ticks_add(time.ticks_ms(), -1000)
     bus.bulk_pull()
     assert slept == []
+
+
+# --- a silent bus ----------------------------------------------------------
+
+class GarblingUART(ScriptedUART):
+    """A DATA line whose rising edges are too slow (long or screened cable):
+    every lone 1 bit is lost, so the echo comes back as 00 and nothing else."""
+
+    def write(self, b):
+        b = bytes(b)
+        self.sent.append(b)
+        self.rx += bytes(len(b))
+        if b[0] == panelbus.LAYOUT_DETECT:
+            self.rx += bytes.fromhex('ffc0f8c0c0f0')   # as measured: noise
+        return len(b)
+
+
+class MuteUART(ScriptedUART):
+    """TX never reaches RX: not even our own echo."""
+
+    def write(self, b):
+        self.sent.append(bytes(b))
+        return len(b)
+
+
+def silent_bus(uart):
+    bus = make_bus(npanels=25)
+    bus.uart = uart
+    calls = []
+
+    def layout_detect(wait_ms=None):
+        calls.append(wait_ms)
+        return bus._xact(bytes([panelbus.LAYOUT_DETECT]), expect=-1, wait_ms=5)
+    bus.layout_detect = layout_detect
+    return bus, calls
+
+
+@pytest.mark.parametrize('uart, hint', [
+    (ScriptedUART(), 'echo fine, no panel answers'),
+    (GarblingUART(), 'own echo garbled, sent 80 read 00: DATA edges too slow'),
+    (MuteUART(), 'no echo of our own frame'),
+])
+def test_silent_bus_gives_up_after_one_try_and_says_why(uart, hint):
+    """Six tries of a 25-panel layout detect blocked the main loop for ~16 s,
+    long enough for every web request to time out."""
+    bus, calls = silent_bus(uart)
+    with pytest.raises(panelbus.BusError) as e:
+        bus.enumerate()
+    assert len(calls) == 1
+    assert 'bus silent' in str(e.value) and hint in str(e.value)
+
+
+def test_a_corrupted_reply_is_not_silence():
+    """Bytes without a terminator (a corrupted head, §9.2) mean the panels
+    are there: keep trying."""
+    bus = make_bus(npanels=1)
+    good = bytes([0xB1, 0x04, 0x40])
+    replies = [bytes([0xB1, 0x93]), good, good]
+    bus.layout_detect = lambda wait_ms=None: replies.pop(0)
+    bus.last_echo = bytes([panelbus.LAYOUT_DETECT])   # the line itself is fine
+    assert bus.enumerate() == good
+    assert replies == [] and bus.npanels == 1
+
+
+def test_a_garbled_line_costs_one_short_window():
+    """On 1 m of screened cable the board read back 00 for its 80 and then
+    noise: no long retry window, no further tries."""
+    bus = make_bus(npanels=1)
+    bus.uart = GarblingUART()
+    t0 = time.ticks_ms()
+    with pytest.raises(panelbus.BusError) as e:
+        bus.enumerate()
+    assert time.ticks_diff(time.ticks_ms(), t0) < 600
+    assert bus.uart.sent.count(bytes([panelbus.LAYOUT_DETECT])) == 1
+    assert 'DATA edges too slow' in str(e.value)

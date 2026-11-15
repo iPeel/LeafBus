@@ -52,6 +52,11 @@ The supply pad next to DATA carries **42 V**; double-check the pad order before 
 The TX pin **must** be open drain; a push-pull output holds the line high and the panels can never answer. The firmware
 sets the pad mode itself.
 
+Keep the DATA lead short (a few cm) and put the ESP32 next to the panels; run its USB power to it instead, which can be
+as long as you like. DATA runs at 1 Mbaud and rises only through the pull-up, so cable capacitance slows every rising
+edge: 1 m of screened audio cable was enough to garble every byte. The log then says
+`own echo garbled ... DATA edges too slow`.
+
 ## Quick start
 
 1. Build the LeafBus firmware image — MicroPython v1.29 with the LeafBus modules frozen in (no root / admin rights;

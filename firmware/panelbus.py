@@ -113,6 +113,7 @@ class PanelBus:
         self.short_replies = 0  # replies that ran into the window
         self.hotplug_replies = 0  # polls answered with the hot-plug byte
         self.keepalives = 0   # polls sent by the timer
+        self.last_echo = b''  # what came back of the last frame we sent
         self.busy = False     # an exchange is in progress: the timer keeps off
         self.last_tx = time.ticks_ms()   # last frame sent, by anyone
         self.last_ka = self.last_tx      # last poll sent by the timer
@@ -193,11 +194,13 @@ class PanelBus:
             return b''
         deadline = time.ticks_add(time.ticks_ms(), wait_ms)
         buf = b''
+        self.last_echo = b''
         while time.ticks_diff(deadline, time.ticks_ms()) > 0:
             n = self.uart.any()
             got = self.uart.read(n) if n else None
             if got:
                 buf += got
+                self.last_echo = buf[:len(frame)]
                 body = buf[len(frame):] if buf[:len(frame)] == frame else buf
                 if expect == -1:
                     if TERMINATOR in body:
@@ -227,9 +230,29 @@ class PanelBus:
         if wait_ms is None:
             wait_ms = 200 + 40 * self.npanels
         raw = self._xact(bytes([LAYOUT_DETECT]), expect=-1, wait_ms=wait_ms)
-        if not raw or TERMINATOR not in raw:
+        if (not raw or TERMINATOR not in raw) and self.echo_ok():
+            # a long window only helps a line that carries the signal
             raw = self._xact(bytes([LAYOUT_DETECT]), expect=-1, wait_ms=1500)
         return raw
+
+    def echo_ok(self):
+        """Our last layout detect came back intact on the wire. If not, the
+        line itself is broken (no echo: wiring; garbled: edges too slow), and
+        whatever else arrived is noise, not a slow reply."""
+        return self.last_echo == bytes([LAYOUT_DETECT])
+
+    def silence_hint(self):
+        """Why a layout detect went unanswered, judged by our own echo: the
+        master hears every byte it sends on the single wire."""
+        sent = bytes([LAYOUT_DETECT])
+        if not self.last_echo:
+            return 'no echo of our own frame: TX does not reach RX - DATA wiring?'
+        if not self.echo_ok():
+            # the open-drain pull-down is fast, the rise through the pull-up
+            # is not: on a long or heavy cable lone 1 bits never come back
+            return ('own echo garbled, sent %s read %s: DATA edges too slow - '
+                    'long cable or weak pull-up' % (sent.hex(), self.last_echo.hex()))
+        return 'echo fine, no panel answers: panel power? GND shared? DATA pad?'
 
     @staticmethod
     def parse_node(b):
@@ -260,6 +283,11 @@ class PanelBus:
             time.sleep_ms(20)
             raw = self.layout_detect()
             if not raw or TERMINATOR not in raw:
+                if not seen and (len(raw) <= 1 or not self.echo_ok()):
+                    # nothing but (at most) our own echo, or a line that
+                    # mangles even that: more tries would only block the main
+                    # loop for seconds (6 x 1.7 s on a too-long cable)
+                    break
                 continue
             raw = raw[:raw.index(TERMINATOR) + 1]
             seen[raw] = seen.get(raw, 0) + 1
@@ -270,8 +298,7 @@ class PanelBus:
             if seen:
                 raw = max(seen, key=seen.get)
         if not raw or TERMINATOR not in raw:
-            raise BusError('no layout string: bus silent (panel power? '
-                           'DATA/GND wiring? pull-up?)')
+            raise BusError('no layout string: bus silent (%s)' % self.silence_hint())
         body = raw[:raw.index(TERMINATOR)]
         nodes = [self.parse_node(b) for b in body
                  if b & 0x80 and (b >> 4) & 7 != PSU_CODE]

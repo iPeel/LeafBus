@@ -34,7 +34,7 @@ import e131
 import web
 import wifi
 
-VERSION = '2.0.2'
+VERSION = '2.0.3'
 EIO = 5                # errno: select() failed (ESP32: no memory for it)
 
 IDLE_MS = 300          # silence that counts as idle
@@ -43,7 +43,9 @@ MAX_NOPOLL_MS = 1000   # poll interval while frames stream in
 RESCAN_MS = 5000       # minimum gap between re-enumerations
 TOUCH_POLL_MS = 120    # poll interval while touch actions are configured
 HOLD_MS = 800          # touch longer than this is a hold
-BUS_RETRY_MS = 10000   # retry a silent bus this often
+BUS_RETRY_MS = 10000   # retry a silent bus after this long at first,
+BUS_RETRY_MAX_MS = 60000  # then less and less often, up to this
+DEAD_POLLS = 5         # polls in a row without any answer: the bus is lost
 SAVE_DELAY_MS = 4000   # state.json is written this long after the last change
 HOUSEKEEP_MS = 250
 GC_MS = 2000           # explicit garbage collection interval
@@ -141,6 +143,8 @@ class App:
         self.last_off = now
         self.last_pull = b''
         self.last_frame = self.last_keep = self.last_rescan = now
+        self.bus_retry_ms = BUS_RETRY_MS
+        self.dead_polls = 0
         self.last_house = self.last_gc = now
         self.fps = 0.0
         self._fps_t = now
@@ -176,12 +180,18 @@ class App:
             self.bus.brightness(self.brightness)
             self.bus_error = None
         except panelbus.BusError as e:
+            # count the retry gap from the end of the attempt, and widen it
+            # while the bus stays silent: every attempt blocks the main loop
+            self.last_rescan = time.ticks_ms()
+            if self.bus_error:
+                self.bus_retry_ms = min(2 * self.bus_retry_ms, BUS_RETRY_MAX_MS)
             self.bus_error = str(e)
             self.raw = b''
             self.layout = None
             self._rebuild(now)
             self._log('bus:', e)
             return False
+        self.bus_retry_ms = BUS_RETRY_MS
         self.raw = raw
         # Free the old layout and effect geometry before computing the new
         # ones, and collect between the steps: with 26 panels the old data,
@@ -922,6 +932,11 @@ class App:
             self._black(now)
 
     def _poll(self, now):
+        if self.bus_error:
+            # nobody answers: each poll would wait out its whole window
+            # (~0.5 s for 25 panels) and starve the web server; the retry in
+            # _housekeeping finds the panels when they come back
+            return
         keep = _since(now, self.last_keep)
         if self.touch_on and not self.bus_error:
             due = keep >= TOUCH_POLL_MS
@@ -940,11 +955,24 @@ class App:
         # legitimately miss the window now and then.
         n = self.bus.npanels
         if r and panelbus.HOTSWAP in r:
+            self.dead_polls = 0
             if _since(now, self.last_rescan) >= RESCAN_MS:
                 self.rescan()
                 if n != self.bus.npanels:
                     self._log('assembly changed: %d -> %d panels' % (n, self.bus.npanels))
             return
+        # Nothing at all (at most a byte of our own echo) several times in a
+        # row: the assembly is gone, not just slow. Enumerate; if that fails
+        # too the bus is marked silent and polling stops.
+        if len(r or b'') < 2:
+            self.dead_polls += 1
+            if self.dead_polls >= DEAD_POLLS and _since(now, self.last_rescan) >= RESCAN_MS:
+                self.dead_polls = 0
+                if not self.rescan():
+                    self._log('bus lost: no answer to %d polls' % DEAD_POLLS)
+                return
+        else:
+            self.dead_polls = 0
         if self.touch_on:
             st = panelbus.touch_status(r, n)
             if st:
@@ -956,7 +984,7 @@ class App:
             # a fragmented heap grows into the memory Wi-Fi and TCP need
             self.last_gc = now
             gc.collect()
-        if self.bus_error and _since(now, self.last_rescan) >= BUS_RETRY_MS:
+        if self.bus_error and _since(now, self.last_rescan) >= self.bus_retry_ms:
             if self.rescan():
                 self._log('bus is back: %d panels' % self.bus.npanels)
                 self.engine.restart(now, fade=8)
