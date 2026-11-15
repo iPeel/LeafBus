@@ -17,7 +17,7 @@ test('panels cover the right lattice cells and have the right connectors', () =>
 });
 
 test('connector positions match the panel geometry of PROTOCOL.md 7.6', () => {
-  // Hexagon: connectors at the apothem 58.02 mm; Triangle: two per side at ±33.5 mm
+  // Hexagon: connectors at the apothem 58.02 units; Triangle: two per side at ±33.5 units
   const h = hex(0, 0), c = M.centre(h);
   for (const e of M.boundary(h)) assert.ok(Math.abs(Math.hypot(e.mid[0] - c[0], e.mid[1] - c[1]) - 58.02) < 0.01);
   const t = tri(0, 0), ct = M.centre(t);
@@ -140,3 +140,12 @@ for (const [name, fx] of Object.entries(fixtures)) {
     assert.equal(plan.unreached.length, 0);
   });
 }
+
+test('panel sizes on the wall match measured panels', () => {
+  // Hexagon 23 x 20 cm, Triangle 23 x 20 cm, Mini Triangle 11.5 x 10 cm
+  const cm = p => { const b = M.bounds([p]); return [b.w, b.h].map(d => d * M.MM_PER_UNIT / 10).sort((a, c) => c - a); };
+  for (const [p, size] of [[hex(0, 0), [23, 19.9]], [tri(0, 0), [23, 19.9]], [mini(0, 0), [11.5, 9.96]]]) {
+    const got = cm(p);
+    assert.ok(Math.abs(got[0] - size[0]) < 0.05 && Math.abs(got[1] - size[1]) < 0.05, p.type + ': ' + got);
+  }
+});

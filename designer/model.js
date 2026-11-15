@@ -4,13 +4,19 @@
  * node (require('./model.js')) for the tests in designer/test/.
  *
  * Geometry (PROTOCOL.md §7.6): Hexagons, Triangles and Mini Triangles tile
- * one triangular lattice with 67 mm sides. A Hexagon covers 6 lattice
- * cells, a Triangle 4, a Mini Triangle 1. Every connector sits at the
- * midpoint of a 67 mm lattice edge (a Triangle has two per side), so two
- * panels can be linked exactly where they share a lattice edge.
+ * one triangular lattice. A Hexagon covers 6 lattice cells, a Triangle 4,
+ * a Mini Triangle 1. Every connector sits at the midpoint of a lattice
+ * edge (a Triangle has two per side), so two panels can be linked exactly
+ * where they share a lattice edge.
+ *
+ * Units: the lattice side is L = 67 layout units, the scale of the
+ * Nanoleaf API's positionData and of the board's /api/layout, so a board's
+ * layout imports without conversion. On the wall that side is 115 mm (a
+ * Mini Triangle measures 11.5 x 10 cm, a Hexagon or Triangle 23 x 20 cm):
+ * MM_PER_UNIT converts any length here to millimetres.
  *
  * Coordinates: lattice vertex (q, r) is at q·e1 + r·e2 with e1 = (L, 0) and
- * e2 = (L/2, -H), in millimetres with y pointing DOWN (screen convention);
+ * e2 = (L/2, -H), in layout units with y pointing DOWN (screen convention);
  * H = L·√3/2. Cell (q, r, 0) is the upward triangle (q,r)(q+1,r)(q,r+1),
  * cell (q, r, 1) the downward one (q+1,r)(q+1,r+1)(q,r+1).
  *
@@ -22,6 +28,7 @@
   'use strict';
 
   const L = 67;
+  const MM_PER_UNIT = 115 / 67;   // measured panels: 115 mm lattice side
   const H = L * Math.sqrt(3) / 2;
   const TYPES = {
     hex:  {label: 'Hexagon',       shape: 7, side: 67,  connectors: 6, cells: 6},
@@ -442,7 +449,7 @@
   // ---- import from a board ------------------------------------------------------------------
   const SHAPE_TYPE = {7: 'hex', 8: 'tri', 9: 'mini'};
 
-  /** Corners of a placed panel from positionData (mm, y up). */
+  /** Corners of a placed panel from positionData (layout units, y up). */
   function polygonMM(p) {
     const s = p.side || (p.shape === 8 ? 134 : 67);
     const rad = p.shape === 7 ? s : s / Math.sqrt(3);
@@ -501,7 +508,7 @@
     return {pieces, chunkOf, controller, psus, skipped: pos.length - usable.length, offGrid};
   }
 
-  const api = {L, H, TYPES, DEFAULT_POWER, P, toLattice, cellAt, cellVerts, ckey, ekey, vkey,
+  const api = {L, H, MM_PER_UNIT, TYPES, DEFAULT_POWER, P, toLattice, cellAt, cellVerts, ckey, ekey, vkey,
                make, clone, reserveIds, cells, centre, boundary, translate, rotate, mirror, pivot,
                encode, decode, encodeAll, decodeAll, analyse, bfs, plan, bounds, power,
                polygonMM, fromBoard};

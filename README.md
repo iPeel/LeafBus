@@ -201,8 +201,8 @@ access needed — open `designer/index.html` in a browser, or serve the folder
   PROTOCOL.md §7.7), and how many power supplies the wattage needs and where they keep every panel closest to a
   supply. Every panel shows its hop count; *Place…* puts the controller or a supply somewhere else by hand and shows
   what that costs.
-- **File**: examples, save / open as JSON, a share link that carries the whole design, a 1:1 **wall template** (SVG in
-  millimetres: panel outlines, linker positions, controller, supplies, the start panel and its distances), and
+- **File**: examples, save / open as JSON, a share link that carries the whole design, a 1:1 **wall template** (SVG at true
+  size, Mini Triangle side 11.5 cm: panel outlines, linker positions, controller, supplies, the start panel and its distances), and
   **Load from a LeafBus board**, which imports the assembly as the panels report it (`/api/layout`), with the
   controller and supply where they actually are.
 

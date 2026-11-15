@@ -4,7 +4,8 @@ Layer 2 of the firmware: pure functions over bytes, no hardware access. Runs
 unchanged on the host (tests, tools) and in MicroPython. Grammar, subtype
 encoding and the geometry formulas are specified in PROTOCOL.md §7.
 
-Coordinates are millimetres as in the Nanoleaf API: x right, y up,
+Coordinates are in the units of the Nanoleaf API's positionData (a Mini
+Triangle's side is 67 units, 115 mm on the wall): x right, y up,
 orientation in degrees counter-clockwise. The root panel is at (0, 0)
 with orientation 0.
 """
@@ -177,7 +178,7 @@ def _attach(p, pe, c, ce):
 
 
 def place(root):
-    """Assign x, y (mm) and o (degrees) to every node.
+    """Assign x, y (layout units) and o (degrees) to every node.
 
     Nodes whose root connector is unknown are placed in a second pass: every
     connector is tried and the one that puts the panel farthest from the
@@ -308,9 +309,9 @@ def neighbours(positions, tree_links=()):
     """Adjacency list by chunk: panels that touch, plus every bus link.
 
     Two panels touch exactly when they have a connector at the same point:
-    every connector sits at the midpoint of a 67 mm lattice edge (§7.6).
+    every connector sits at the midpoint of a 67-unit lattice edge (§7.6).
     A distance test between centres does not work: a Mini Triangle on a
-    Triangle's side sits off-centre, 67 mm away, as far as panels that only
+    Triangle's side sits off-centre, 67 units away, as far as panels that only
     share a corner."""
     n = len(positions)
     adj = [set() for _ in range(n)]
@@ -318,9 +319,9 @@ def neighbours(positions, tree_links=()):
         if a < n and b < n:
             adj[a].add(b)
             adj[b].add(a)
-    # hash connectors into 2 mm cells; coinciding ones (< 1 mm apart, the
+    # hash connectors into 2-unit cells; coinciding ones (< 1 unit apart, the
     # coordinates are rounded) are in the same or a neighbouring cell.
-    # Integers throughout (0.01 mm; one int per cell): on the board a tuple
+    # Integers throughout (0.01 unit; one int per cell): on the board a tuple
     # of floats per point made this allocate ~70 kB for 26 panels.
     grid = {}
     px = []

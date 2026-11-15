@@ -424,6 +424,9 @@ E5 root=5
 The controller computes panel positions from this same tree and exposes them as `positionData` in its public API. The
 root panel sits at (0, 0) with orientation 0; children are placed recursively.
 
+Lengths are in positionData units, not millimetres: a Mini Triangle's side is 67 units and measures 115 mm on the wall
+(Mini Triangle 11.5 × 10 cm, Hexagon and Triangle 23 × 20 cm), so 1 unit ≈ 1.72 mm.
+
 Notation: `pe` parent connector, `ce` child's root connector,
 `a(shape, e)` the angle of the side that carries connector `e`,
 `v(shape, e)` the vector from the panel centre to connector `e` in the panel's own frame, y up, `R(θ)` counter-clockwise
@@ -434,13 +437,13 @@ o_child = (o_parent + 180 + a(child, ce) − a(parent, pe)) mod 360
 P_child = P_parent + R(o_parent) · [ v(parent, pe) − R(o_child − o_parent) · v(child, ce) ]
 ```
 
-| shape (API id)    | side, mm | `a(e)`                   | `v(e)`                                                      |
+| shape (API id)    | side     | `a(e)`                   | `v(e)`                                                      |
 |-------------------|----------|--------------------------|-------------------------------------------------------------|
 | Mini Triangle (9) | 67       | `120·e`                  | `(0, −19.34)` rotated by `−a(e)`                            |
 | Triangle (8)      | 134      | `120·(((e+1)>>1) mod 3)` | `(∓33.5, −38.68)` rotated by `−a(e)`; `−` for e ∈ {0, 2, 4} |
 | Hexagon (7)       | 67       | `60·e`                   | `(0, −58.02)` rotated by `−a(e)`                            |
 
-19.34 and 38.68 mm are the inradii (`s / 2√3`), 58.02 the hexagon apothem (`s·√3 / 2`), 33.5 a quarter side: the two
+19.34 and 38.68 are the inradii (`s / 2√3`), 58.02 the hexagon apothem (`s·√3 / 2`), 33.5 a quarter side: the two
 connectors of a Triangle side sit where the midpoints of two Mini Triangle sides would. Connectors are numbered
 **clockwise** when the panel is viewed from the front. By construction the child's connector lands exactly on the
 parent's, so the tiling has no gaps and no overlaps.
@@ -453,7 +456,7 @@ linker, and independently on a 9-panel ring (section 7.7) ([Cptmeme][cpt]).
 Every panel centre produced by these formulas lies on a rectangular lattice with cells of
 
 ```
-side_mini / 4  ×  side_mini / (2√3)  =  16.75 × 19.341 mm
+side_mini / 4  ×  side_mini / (2√3)  =  16.75 × 19.341 units
 ```
 
 for Mini Triangles in either orientation, Triangles and Hexagons alike, as long as the root orientation is a multiple of

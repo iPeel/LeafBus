@@ -18,7 +18,7 @@
   // ---- state ----------------------------------------------------------------
   const S = {
     pieces: [], sel: new Set(), tool: 'hex', view: 'design',
-    cam: {x: 0, y: 0, k: 1.2},              // centre (mm), pixels per mm
+    cam: {x: 0, y: 0, k: 1.2},              // centre (layout units), pixels per unit
     prefer: 'shallow', power: Object.assign({}, M.DEFAULT_POWER),
     ctl: null, psus: [],                     // overrides: {key, piece}
     showExtras: true, pick: null,
@@ -204,7 +204,11 @@
   }
 
   // ---- sizes and the start panel --------------------------------------------------------------
-  const fmtLen = mm => S.units === 'in' ? (mm / 25.4).toFixed(2) + ' in' : (mm / 10).toFixed(1) + ' cm';
+  /** A length in layout units, as it measures on the wall (model.js: MM_PER_UNIT). */
+  const fmtLen = d => {
+    const mm = d * M.MM_PER_UNIT;
+    return S.units === 'in' ? (mm / 25.4).toFixed(2) + ' in' : (mm / 10).toFixed(1) + ' cm';
+  };
 
   /**
    * Where to start on the wall: one selected panel, or else the panel whose
@@ -802,50 +806,56 @@
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   }
 
+  /** Mounting template at true size. The drawing stays in layout units (viewBox) and the
+   *  page is sized in millimetres, so it prints 1:1; text, strokes and markers are given in
+   *  millimetres on paper and converted with mm(). */
   function templateSVG() {
-    const b = M.bounds(S.pieces), m = 40, plan = S.plan;
-    const x0 = b.x0 - m, y0 = b.y0 - m - 20, w = b.w + 2 * m, h = b.h + 2 * m + 30;
+    const k = M.MM_PER_UNIT, mm = n => (n / k).toFixed(2), f = n => n.toFixed(1);
+    const b = M.bounds(S.pieces), m = 25 / k, plan = S.plan;
+    const x0 = b.x0 - m, y0 = b.y0 - m - 12 / k, w = b.w + 2 * m, h = b.h + 2 * m + 18 / k;
     const order = new Map();
     if (plan) { let i = 1; for (const id of [plan.controller && plan.controller.piece].concat(plan.tree.map(t => t.child))) if (id) order.set(id, i++); }
     const o = [];
-    o.push('<svg xmlns="http://www.w3.org/2000/svg" width="' + w.toFixed(1) + 'mm" height="' + h.toFixed(1) + 'mm" viewBox="' +
+    o.push('<svg xmlns="http://www.w3.org/2000/svg" width="' + (w * k).toFixed(1) + 'mm" height="' + (h * k).toFixed(1) + 'mm" viewBox="' +
       [x0, y0, w, h].map(n => n.toFixed(2)).join(' ') + '" font-family="sans-serif">');
-    o.push('<text x="' + (b.x0).toFixed(1) + '" y="' + (b.y0 - m + 4).toFixed(1) + '" font-size="8">LeafBus layout — ' +
-      S.pieces.length + ' panels, ' + (b.w / 10).toFixed(1) + ' × ' + (b.h / 10).toFixed(1) + ' cm. Print at 100 % (no scaling).</text>');
+    o.push('<text x="' + f(b.x0) + '" y="' + f(b.y0 - m + 4 / k) + '" font-size="' + mm(5) + '">LeafBus layout — ' +
+      S.pieces.length + ' panels, ' + fmtLen(b.w) + ' × ' + fmtLen(b.h) + '. Print at 100 % (no scaling).</text>');
     for (const p of S.pieces) {
-      o.push('<polygon points="' + pts(p) + '" fill="none" stroke="#000" stroke-width="0.6"/>');
+      o.push('<polygon points="' + pts(p) + '" fill="none" stroke="#000" stroke-width="' + mm(0.6) + '"/>');
       const c = M.centre(p);
-      if (order.has(p.id)) o.push('<text x="' + c[0].toFixed(1) + '" y="' + (c[1] + 3).toFixed(1) + '" font-size="9" text-anchor="middle">' + order.get(p.id) + '</text>');
+      if (order.has(p.id)) o.push('<text x="' + f(c[0]) + '" y="' + f(c[1] + 3 / k) + '" font-size="' + mm(9) + '" text-anchor="middle">' + order.get(p.id) + '</text>');
     }
-    const rect = (e, dash) => '<rect x="-14" y="-3.5" width="28" height="7" rx="2" fill="none" stroke="#000" stroke-width="0.6"' +
-      (dash ? ' stroke-dasharray="2 1.5"' : '') + ' transform="translate(' + e.mid[0].toFixed(2) + ' ' + e.mid[1].toFixed(2) + ') rotate(' + edgeAngle(e).toFixed(1) + ')"/>';
+    const rect = (e, dash) => '<rect x="' + mm(-14) + '" y="' + mm(-3.5) + '" width="' + mm(28) + '" height="' + mm(7) + '" rx="' + mm(2) +
+      '" fill="none" stroke="#000" stroke-width="' + mm(0.6) + '"' + (dash ? ' stroke-dasharray="' + mm(2) + ' ' + mm(1.5) + '"' : '') +
+      ' transform="translate(' + e.mid[0].toFixed(2) + ' ' + e.mid[1].toFixed(2) + ') rotate(' + edgeAngle(e).toFixed(1) + ')"/>';
     if (plan) {
       for (const t of plan.tree) o.push(rect(t.edge, false));
       for (const x of plan.extras) o.push(rect(x.edge, true));
       const mark = (e, label) => {
-        const x = e.mid[0] + e.normal[0] * 16, y = e.mid[1] + e.normal[1] * 16;
-        return '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="7" fill="none" stroke="#000" stroke-width="0.6"/>' +
-          '<text x="' + x.toFixed(1) + '" y="' + (y + 2.5).toFixed(1) + '" font-size="7" text-anchor="middle">' + label + '</text>';
+        const x = e.mid[0] + e.normal[0] * 16 / k, y = e.mid[1] + e.normal[1] * 16 / k;
+        return '<circle cx="' + f(x) + '" cy="' + f(y) + '" r="' + mm(7) + '" fill="none" stroke="#000" stroke-width="' + mm(0.6) + '"/>' +
+          '<text x="' + f(x) + '" y="' + f(y + 2.5 / k) + '" font-size="' + mm(7) + '" text-anchor="middle">' + label + '</text>';
       };
       if (plan.controller) o.push(mark(plan.controller.edge, 'C'));
       plan.psus.forEach((s, i) => o.push(mark(s.edge, 'P' + (plan.psus.length > 1 ? i + 1 : ''))));
     }
     // start panel: crosshair through its centre to the edges of the design, with distances
-    const st = startPanel(), [cx, cy] = st.c, f = n => n.toFixed(1);
+    const st = startPanel(), [cx, cy] = st.c;
     const ln = (x1, y1, x2, y2, dash) => '<line x1="' + f(x1) + '" y1="' + f(y1) + '" x2="' + f(x2) + '" y2="' + f(y2) +
-      '" stroke="#000" stroke-width="0.4"' + (dash ? ' stroke-dasharray="3 2"' : '') + '/>';
-    const tx = (x, y, s, rot) => '<text x="' + f(x) + '" y="' + f(y) + '" font-size="6" text-anchor="middle"' +
+      '" stroke="#000" stroke-width="' + mm(0.4) + '"' + (dash ? ' stroke-dasharray="' + mm(3) + ' ' + mm(2) + '"' : '') + '/>';
+    const tx = (x, y, s, rot) => '<text x="' + f(x) + '" y="' + f(y) + '" font-size="' + mm(4) + '" text-anchor="middle"' +
       (rot ? ' transform="rotate(-90 ' + f(x) + ' ' + f(y) + ')"' : '') + '>' + s + '</text>';
     o.push('<rect x="' + f(b.x0) + '" y="' + f(b.y0) + '" width="' + f(b.w) + '" height="' + f(b.h) +
-      '" fill="none" stroke="#000" stroke-width="0.3" stroke-dasharray="1 2"/>');
+      '" fill="none" stroke="#000" stroke-width="' + mm(0.3) + '" stroke-dasharray="' + mm(1) + ' ' + mm(2) + '"/>');
     o.push(ln(b.x0, cy, b.x1, cy, true), ln(cx, b.y0, cx, b.y1, true));
-    o.push(ln(cx - 10, cy, cx + 10, cy), ln(cx, cy - 10, cx, cy + 10),
-      '<circle cx="' + f(cx) + '" cy="' + f(cy) + '" r="5" fill="none" stroke="#000" stroke-width="0.6"/>');
-    o.push(tx(cx, cy + 14, 'START'));
-    o.push(tx((b.x0 + cx) / 2, cy - 2, fmtLen(st.left)), tx((cx + b.x1) / 2, cy - 2, fmtLen(st.right)),
-      tx(cx - 2, (b.y0 + cy) / 2, fmtLen(st.up), true), tx(cx - 2, (cy + b.y1) / 2, fmtLen(st.down), true));
-    o.push(tx((b.x0 + b.x1) / 2, b.y0 - 6, 'width ' + fmtLen(b.w)), tx(b.x1 + 8, (b.y0 + b.y1) / 2, 'height ' + fmtLen(b.h), true));
-    o.push('<text x="' + b.x0.toFixed(1) + '" y="' + (b.y1 + m - 4).toFixed(1) + '" font-size="6">Mount the START panel first: ' +
+    o.push(ln(cx - 10 / k, cy, cx + 10 / k, cy), ln(cx, cy - 10 / k, cx, cy + 10 / k),
+      '<circle cx="' + f(cx) + '" cy="' + f(cy) + '" r="' + mm(5) + '" fill="none" stroke="#000" stroke-width="' + mm(0.6) + '"/>');
+    o.push(tx(cx, cy + 14 / k, 'START'));
+    const g = 2 / k;
+    o.push(tx((b.x0 + cx) / 2, cy - g, fmtLen(st.left)), tx((cx + b.x1) / 2, cy - g, fmtLen(st.right)),
+      tx(cx - g, (b.y0 + cy) / 2, fmtLen(st.up), true), tx(cx - g, (cy + b.y1) / 2, fmtLen(st.down), true));
+    o.push(tx((b.x0 + b.x1) / 2, b.y0 - 6 / k, 'width ' + fmtLen(b.w)), tx(b.x1 + 8 / k, (b.y0 + b.y1) / 2, 'height ' + fmtLen(b.h), true));
+    o.push('<text x="' + f(b.x0) + '" y="' + f(b.y1 + m - 4 / k) + '" font-size="' + mm(4) + '">Mount the START panel first: ' +
       'the design then reaches ' + fmtLen(st.left) + ' left, ' + fmtLen(st.right) + ' right, ' + fmtLen(st.up) + ' up and ' +
       fmtLen(st.down) + ' down from its centre. Numbers: order along the bus from the controller (C). ' +
       'Solid boxes: linkers the bus needs. Dashed: optional linkers. P: power supply.</text>');
