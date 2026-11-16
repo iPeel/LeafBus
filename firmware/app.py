@@ -34,7 +34,7 @@ import e131
 import web
 import wifi
 
-VERSION = '2.0.4'
+VERSION = '2.0.5'
 EIO = 5                # errno: select() failed (ESP32: no memory for it)
 
 IDLE_MS = 300          # silence that counts as idle
@@ -149,6 +149,7 @@ class App:
         self.bus_retry_ms = BUS_RETRY_MS
         self.dead_polls = 0
         self.garbled = 0               # poll replies dropped as corrupted
+        self.layout_rejects = 0        # new layout strings that did not read the same again
         self.last_house = self.last_gc = now
         self.fps = 0.0
         self._fps_t = now
@@ -175,12 +176,52 @@ class App:
             print(*a)
 
     # --- bus and layout -------------------------------------------------------
+    def _confirmed(self, raw):
+        """A layout string that differs from the one in use must be read
+        again before it replaces it. Bit errors on the bus change node bytes
+        (1 in 8 reads of a 23-panel string had one) and the two equal reads
+        enumerate() asks for are taken back to back: once, two seconds after
+        start-up, a 23-panel wall was taken for 22, which shifts every colour
+        after the lost panel. Up to two more reads; a string read twice wins,
+        else the old layout stays."""
+        old = self.raw
+        if not old or raw == old:
+            return raw
+        reads = [raw]
+        last = raw                  # what the bus driver took last
+        win = None
+        for _ in range(2):
+            time.sleep_ms(150)
+            try:
+                r = self.bus.enumerate()
+            except panelbus.BusError:
+                continue
+            last = r
+            if r in reads:
+                win = r
+                break
+            reads.append(r)
+        if win is None:
+            self._log('layout: reads disagree, keeping the %d-panel layout: %s'
+                      % (panelbus.count_panels(old), ' / '.join(x.hex() for x in reads)))
+            self.layout_rejects += 1
+            win = old
+        elif len(reads) > 1:
+            self._log('layout: reads disagreed, %d panels confirmed: %s'
+                      % (panelbus.count_panels(win), ' / '.join(x.hex() for x in reads)))
+        if win != last:
+            self.bus.adopt(win)
+        if win != old:
+            self._log('layout: %d -> %d panels: %s -> %s'
+                      % (panelbus.count_panels(old), panelbus.count_panels(win), old.hex(), win.hex()))
+        return win
+
     def rescan(self):
         """Enumerate, recompute geometry, give the effect the new layout."""
         now = time.ticks_ms()
         self.last_rescan = now
         try:
-            raw = self.bus.enumerate()
+            raw = self._confirmed(self.bus.enumerate())
             self.bus.brightness(self.brightness)
             self.bus_error = None
         except panelbus.BusError as e:
@@ -804,7 +845,8 @@ class App:
                         'short_replies': getattr(self.bus, 'short_replies', 0),
                         'hotplug_replies': getattr(self.bus, 'hotplug_replies', 0),
                         'keepalives': getattr(self.bus, 'keepalives', 0),
-                        'garbled_replies': self.garbled}}
+                        'garbled_replies': self.garbled,
+                        'layout_rejects': self.layout_rejects}}
         d['idf_heap'] = idf_heap()
         try:
             d['mem_free'] = gc.mem_free()
@@ -991,7 +1033,7 @@ class App:
         # signal (PROTOCOL.md §8). A short reply is not: far panels
         # legitimately miss the window now and then.
         n = self.bus.npanels
-        if r and panelbus.HOTSWAP in r:
+        if panelbus.is_hotplug(r):
             self.dead_polls = 0
             if _since(now, self.last_rescan) >= RESCAN_MS:
                 self.rescan()

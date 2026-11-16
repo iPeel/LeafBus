@@ -210,7 +210,16 @@ class PanelBus:
                         self.t_reply = time.ticks_diff(time.ticks_us(), t0)
                         return body
                 elif len(body) >= expect:
+                    if hotplug_ends and len(body) == expect:
+                        # a hot-plug byte follows the last pair at once
+                        # (§8): don't leave it for the next poll's drain
+                        time.sleep_us(300)
+                        n = self.uart.any()
+                        if n:
+                            body += self.uart.read(n)
                     self.t_reply = time.ticks_diff(time.ticks_us(), t0)
+                    if hotplug_ends and is_hotplug(body):
+                        self.hotplug_replies += 1
                     return body
                 elif hotplug_ends and len(body) & 1 and body[-1] == HOTSWAP:
                     # status bytes never take the value CC, so an odd-length
@@ -302,6 +311,11 @@ class PanelBus:
                 raw = max(seen, key=seen.get)
         if not raw or TERMINATOR not in raw:
             raise BusError('no layout string: bus silent (%s)' % self.silence_hint())
+        return self.adopt(raw)
+
+    def adopt(self, raw):
+        """Take raw (a layout string up to its terminator) as the assembly:
+        sets npanels and nodes, which address the panels by position."""
         body = raw[:raw.index(TERMINATOR)]
         nodes = [self.parse_node(b) for b in body
                  if b & 0x80 and (b >> 4) & 7 != PSU_CODE]
@@ -393,6 +407,19 @@ class PanelBus:
         if 0x01 not in raw:
             return None
         return raw[raw.index(0x01) + 1:]
+
+
+def is_hotplug(raw):
+    """A bulk pull reply that reports a hot-plug: the pairs of the panels
+    still present, then a trailing CC (§8) - an odd length ending in CC.
+    A CC elsewhere is a bit error, not an event."""
+    return bool(raw) and len(raw) & 1 == 1 and raw[-1] == HOTSWAP
+
+
+def count_panels(raw):
+    """Panel nodes in a layout string (the power supply is not a panel)."""
+    body = raw[:raw.index(TERMINATOR)] if TERMINATOR in raw else raw
+    return sum(1 for b in body if b & 0x80 and (b >> 4) & 7 != PSU_CODE)
 
 
 def touch_status(raw, npanels):

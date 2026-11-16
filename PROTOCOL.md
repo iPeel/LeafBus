@@ -492,7 +492,8 @@ reply (section 6.3):
 * `CC` also follows the first enumeration after the master restarts while the panels stay powered, with no change to the
   assembly ([Cptmeme][cpt]). A second `00` + `80` clears it. A bus left silent for ~370 ms produces it too, as a
   lone `CC` with no pairs (section 4.2). Re-enumerate on every `CC` without trying to tell the
-  causes apart.
+  causes apart - but only on a trailing one: the reply then has an odd length. On a noisy line a pair byte can read
+  as `CC` by a bit error; that is not an event.
 
 ## 9. Quirks and variations
 
@@ -510,6 +511,12 @@ does not matter. A corrupted node byte can name a root connector that does not e
 six-connector panel), which would make the stock parser loop. Read the string up to six times and use one that repeats;
 if a node still has an impossible root connector, choose the connector that places the panel farthest from the panels
 already placed. Cause unknown.
+
+On a line with random bit errors (measured on a 23-panel assembly: 8 of 60 reads differed, by one or two bits
+anywhere in the string, once `00→40` cutting it short) two equal reads in a row are not enough when the string
+differs from the one in use: once a panel byte lost bit 7 and the master took a 23-panel assembly for 22, which shifts
+the chunk index of every later panel. `firmware/` reads a changed string up to twice more and keeps the old layout
+unless one string comes back.
 
 ### 9.3 Triangle: six connectors, one zone
 

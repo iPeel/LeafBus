@@ -108,7 +108,8 @@ FOURTEEN = ('b1 b0 04 b2 b2 b0 b1 b1 04 e3 00 02 00 00 04 04 04 b2 04 04 04 '
 
 class FakeBus:
     """PanelBus look-alike: answers enumeration with a fixed layout string,
-    remembers pushed colors, reports touches from self.touching."""
+    remembers pushed colors, reports touches from self.touching.
+    self.reads: layout strings the next enumerations return (noise)."""
 
     def __init__(self, layout=FOURTEEN):
         self.raw = bytes.fromhex(layout)
@@ -126,10 +127,15 @@ class FakeBus:
         import panelbus
         if self.silent:
             raise panelbus.BusError('no layout string: bus silent (simulated)')
-        body = self.raw[:self.raw.index(0x40)]
+        raw = self.reads.pop(0) if getattr(self, 'reads', None) else self.raw
+        return self.adopt(raw)
+
+    def adopt(self, raw):
+        body = raw[:raw.index(0x40)]
         self.nodes = [b for b in body if b & 0x80 and (b >> 4) & 7 != 1]
         self.npanels = len(self.nodes)
-        return self.raw
+        self.adopted = raw
+        return raw
 
     def brightness(self, v):
         self.level = v

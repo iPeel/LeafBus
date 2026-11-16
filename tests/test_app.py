@@ -610,3 +610,82 @@ def test_network_out_of_memory_does_not_restart_the_board(board, monkeypatch):
         a.run()
     assert a.net_starved == 30 and a.errors == 0
     assert a.bus.pushes > pushes       # the lights kept going
+
+
+# --- noise on the layout string and in hot-plug bytes ------------------------
+
+def _drop_panel(raw):
+    """The layout string with one node byte corrupted into a non-node, as a
+    flipped bit 7 does: one panel fewer, every later position shifted."""
+    b = bytearray(raw)
+    i = max(k for k in range(len(b) - 1) if b[k] & 0x80 and (b[k] >> 4) & 7 != 1)
+    b[i] &= 0x7F
+    return bytes(b)
+
+
+def test_a_layout_read_once_does_not_replace_the_assembly(board):
+    """Captured on the wall: 2 s after start-up a 23-panel wall was taken for
+    22. A changed string must read the same again."""
+    import panelbus
+    a = board()
+    good = a.raw
+    n = a.bus.npanels
+    bad = _drop_panel(good)
+    assert panelbus.count_panels(bad) == n - 1
+    a.bus.reads = [bad, good, good]
+    a.rescan()
+    assert a.raw == good and a.bus.npanels == n and a.bus.adopted == good
+    assert len(a.engine.ctx.x) == n
+
+
+def test_three_different_reads_keep_the_old_layout(board):
+    a = board()
+    good, n = a.raw, a.bus.npanels
+    bad = _drop_panel(good)
+    worse = _drop_panel(bad)
+    other = bytes([good[0] ^ 0x02]) + good[1:]
+    a.bus.reads = [bad, worse, other]
+    a.rescan()
+    assert a.raw == good and a.bus.npanels == n and a.layout_rejects == 1
+
+
+def test_a_real_change_is_taken_when_it_reads_the_same_twice(board):
+    a = board()
+    smaller = _drop_panel(a.raw)
+    n = a.bus.npanels
+    a.bus.reads = [smaller, smaller]
+    a.rescan()
+    assert a.raw == smaller and a.bus.npanels == n - 1 and a.layout_rejects == 0
+
+
+def test_hotplug_byte_must_trail_the_pairs():
+    import panelbus
+    n = 23
+    pairs = bytes(2 * n)
+    assert panelbus.is_hotplug(pairs + b'\xcc')
+    assert panelbus.is_hotplug(b'\xcc')                 # nobody left but CC
+    assert panelbus.is_hotplug(bytes(10) + b'\xcc')     # 5 panels still there
+    assert not panelbus.is_hotplug(pairs)
+    noisy = bytearray(pairs)
+    noisy[7] = 0xCC                                     # a flipped byte inside
+    assert not panelbus.is_hotplug(bytes(noisy))
+    assert not panelbus.is_hotplug(b'')
+    assert not panelbus.is_hotplug(None)
+
+
+def test_a_cc_inside_a_poll_reply_does_not_rescan(board):
+    a = board()
+    a.touch_on = True
+    n = a.bus.npanels
+    reply = bytearray(2 * n)
+    reply[3] = 0xCC
+    a.bus.bulk_pull = lambda wait_ms=None: bytes(reply)
+    a.last_rescan = time.ticks_add(time.ticks_ms(), -60000)
+    scans = []
+    a.rescan = lambda: scans.append(1) or True
+    a._poll(time.ticks_ms())
+    assert scans == []
+    a.bus.bulk_pull = lambda wait_ms=None: bytes(2 * n) + b'\xcc'
+    a.last_keep = time.ticks_add(time.ticks_ms(), -1000)
+    a._poll(time.ticks_ms())
+    assert scans == [1]
