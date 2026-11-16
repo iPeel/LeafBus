@@ -34,14 +34,15 @@ import e131
 import web
 import wifi
 
-VERSION = '2.0.3'
+VERSION = '2.0.4'
 EIO = 5                # errno: select() failed (ESP32: no memory for it)
 
 IDLE_MS = 300          # silence that counts as idle
 KEEP_MS = 200          # poll interval when idle; the panels drop out after ~370 ms of silence
 MAX_NOPOLL_MS = 1000   # poll interval while frames stream in
 RESCAN_MS = 5000       # minimum gap between re-enumerations
-TOUCH_POLL_MS = 120    # poll interval while touch actions are configured
+TOUCH_POLL_MS = 40     # poll interval while touch actions are configured
+TOUCH_CONFIRM = 2      # polls in a row that make a press (and a release)
 HOLD_MS = 800          # touch longer than this is a hold
 BUS_RETRY_MS = 10000   # retry a silent bus after this long at first,
 BUS_RETRY_MAX_MS = 60000  # then less and less often, up to this
@@ -135,6 +136,8 @@ class App:
         self.hold_until = None         # identify
         self.pressed = {}              # chunk -> press time
         self.held = set()              # presses already acted upon
+        self.maybe = {}                # chunk -> (first seen, polls): not yet a press
+        self.gone = {}                 # chunk -> polls without touch: not yet a release
         self.touches = 0
         self.off_at = None             # sleep timer
         self.timer_set = None          # minutes it was set to
@@ -145,6 +148,7 @@ class App:
         self.last_frame = self.last_keep = self.last_rescan = now
         self.bus_retry_ms = BUS_RETRY_MS
         self.dead_polls = 0
+        self.garbled = 0               # poll replies dropped as corrupted
         self.last_house = self.last_gc = now
         self.fps = 0.0
         self._fps_t = now
@@ -231,6 +235,8 @@ class App:
         self.engine.restart(now, fade=3, ctx=ctx)
         self.pressed = {}
         self.held = set()
+        self.maybe = {}
+        self.gone = {}
 
     def _black(self, now, fade=6):
         self.bus.push_colors([(0, 0, 0, 0, fade)] * self.bus.npanels)
@@ -523,12 +529,15 @@ class App:
     def _press(self, i, now):
         """Returns True when the press is fully handled (no hold to follow)."""
         self.touches += 1
-        if not self.power:            # any touch wakes the panels up
-            tap, hold = self._actions(i)
-            if tap != 'none' or hold != 'none':
-                self.set_power(True, now)
-            return True
         tap, hold = self._actions(i)
+        if not self.power:
+            # a tap wakes the panels up if taps do something; with taps set
+            # to nothing only a hold does (see _touch), so a brush against
+            # the wall, or noise on the bus, leaves them off
+            if tap != 'none':
+                self.set_power(True, now)
+                return True
+            return hold == 'none'
         if tap == 'effect':
             self._run('effect', i, now)
         elif hold == 'none':
@@ -537,32 +546,59 @@ class App:
         return False
 
     def _touch(self, status, now):
+        """Debounced: a press needs TOUCH_CONFIRM polls in a row reporting a
+        touch, a release as many without. Bit errors on the bus flip single
+        bits in single replies, at random panels (two at once in one status
+        byte read as a touch and woke the wall up); a finger stays for many
+        polls."""
         for i in range(len(status)):
             on = panelbus.is_touched(status[i])
             t0 = self.pressed.get(i)
-            if on:
-                if t0 is None:
-                    self.pressed[i] = now
-                    if self._press(i, now):
-                        self.held.add(i)
-                elif i not in self.held and _since(now, t0) >= HOLD_MS:
+            if t0 is None:
+                if not on:
+                    self.maybe.pop(i, None)
+                    continue
+                first, seen = self.maybe.get(i, (now, 0))
+                seen += 1
+                if seen < TOUCH_CONFIRM:
+                    self.maybe[i] = (first, seen)
+                    continue
+                del self.maybe[i]
+                self.pressed[i] = first
+                if self._press(i, now):
                     self.held.add(i)
-                    self._run(self._actions(i)[1], i, now)
-            elif t0 is not None:
-                del self.pressed[i]
-                if i in self.held:
-                    self.held.discard(i)
-                else:
-                    tap = self._actions(i)[0]
-                    if tap != 'effect':
-                        self._run(tap, i, now)
+                continue
+            if on:
+                self.gone.pop(i, None)
+                if i not in self.held and _since(now, t0) >= HOLD_MS:
+                    self.held.add(i)
+                    if self.power:
+                        self._run(self._actions(i)[1], i, now)
+                    else:                    # taps do nothing: a hold wakes
+                        self.set_power(True, now)
+                continue
+            missed = self.gone.get(i, 0) + 1
+            if missed < TOUCH_CONFIRM:
+                self.gone[i] = missed
+                continue
+            self.gone.pop(i, None)
+            del self.pressed[i]
+            if i in self.held:
+                self.held.discard(i)
+            elif self.power:
+                tap = self._actions(i)[0]
+                if tap != 'effect':
+                    self._run(tap, i, now)
 
     def touch_event(self, i, hold=False):
         """A touch from the web UI, handled like a real one."""
         now = time.ticks_ms()
         if not self._press(i, now):
             tap, hold_a = self._actions(i)
-            if hold:
+            if not self.power:
+                if hold:                    # as in _touch: a hold wakes
+                    self.set_power(True, now)
+            elif hold:
                 self._run(hold_a, i, now)
             elif tap != 'effect':
                 self._run(tap, i, now)
@@ -767,7 +803,8 @@ class App:
                         'poll': getattr(self.bus, 't_reply', 0) / 1000,
                         'short_replies': getattr(self.bus, 'short_replies', 0),
                         'hotplug_replies': getattr(self.bus, 'hotplug_replies', 0),
-                        'keepalives': getattr(self.bus, 'keepalives', 0)}}
+                        'keepalives': getattr(self.bus, 'keepalives', 0),
+                        'garbled_replies': self.garbled}}
         d['idf_heap'] = idf_heap()
         try:
             d['mem_free'] = gc.mem_free()
@@ -977,6 +1014,8 @@ class App:
             st = panelbus.touch_status(r, n)
             if st:
                 self._touch(st, now)
+            elif r and len(r) >= 2 * n:
+                self.garbled += 1       # full length, impossible status bits
 
     def _housekeeping(self, now):
         if _since(now, self.last_gc) >= GC_MS:

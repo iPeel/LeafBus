@@ -180,14 +180,20 @@ def test_preset_order(board):
 
 # --- touch -----------------------------------------------------------------------
 
-def press(a, chunk, ms):
-    """Hold a panel for ms milliseconds through real bus polls."""
+def press(a, chunk, ms, t0=None):
+    """Hold a panel for ms milliseconds through real bus polls, one every
+    TOUCH_POLL_MS as on the board, then let go for a few polls."""
     a.bus.touching = {chunk}
-    t0 = time.ticks_ms()
-    a._touch(_status(a), t0)
-    a._touch(_status(a), time.ticks_add(t0, ms))
+    t0 = time.ticks_ms() if t0 is None else t0
+    t = 0
+    while t <= ms:
+        a._touch(_status(a), time.ticks_add(t0, t))
+        t += appmod.TOUCH_POLL_MS
     a.bus.touching = set()
-    a._touch(_status(a), time.ticks_add(t0, ms + 10))
+    for _ in range(appmod.TOUCH_CONFIRM + 1):
+        a._touch(_status(a), time.ticks_add(t0, t))
+        t += appmod.TOUCH_POLL_MS
+    return time.ticks_add(t0, t)
 
 
 def _status(a):
@@ -218,6 +224,84 @@ def test_per_panel_tap_action(board):
     assert a.preset != first
     press(a, 5, 50)                 # other panels keep the default
     assert a.power
+
+
+def _polls(a, frames, t0=None):
+    """Feed status lists (chunk order) to the touch logic, one per poll."""
+    t = time.ticks_ms() if t0 is None else t0
+    for st in frames:
+        a._touch(st, t)
+        t = time.ticks_add(t, appmod.TOUCH_POLL_MS)
+    return t
+
+
+def _off_hold_power(board):
+    a = board()
+    a.cfg['touch']['tap'] = 'none'
+    a.cfg['touch']['hold'] = 'power'
+    a._touch_cfg()
+    a.set_power(False)
+    return a
+
+
+def test_one_noisy_poll_is_not_a_touch(board):
+    """Captured on the wall at 20:08:50: one poll had 14 (two flipped bits)
+    in one status byte, the polls around it 00. It woke the wall up."""
+    a = _off_hold_power(board)
+    a.cfg['touch']['tap'] = 'power'      # even with taps acting
+    quiet = [0] * a.bus.npanels
+    noisy = list(quiet)
+    noisy[8] = 0x14
+    _polls(a, [quiet, noisy, quiet, quiet, noisy, quiet])
+    assert not a.power and a.touches == 0
+
+
+def test_garbled_reply_is_dropped():
+    import panelbus
+    n = 23
+    ok = bytes(2 * n)
+    assert panelbus.touch_status(ok, n) == [0] * n
+    for bad in (0x08, 0x40, 0x80, 0xA0):    # status bits panels never send
+        raw = bytearray(ok)
+        raw[6] = bad
+        assert panelbus.touch_status(bytes(raw), n) is None
+    raw = bytearray(ok)
+    raw[7] = 0x80                           # the second byte is not checked
+    assert panelbus.touch_status(bytes(raw), n) == [0] * n
+    raw = bytearray(ok)
+    raw[2 * (n - 1 - 4)] = 0x34             # a touch on the PSU panel (§6.3)
+    assert panelbus.touch_status(bytes(raw), n)[4] == 0x34
+
+
+def test_tap_set_to_nothing_does_not_wake_only_a_hold_does(board):
+    a = _off_hold_power(board)
+    t = press(a, 4, 200)                    # a tap: nothing
+    assert not a.power
+    press(a, 4, appmod.HOLD_MS + 100, t)
+    assert a.power
+
+
+def test_a_tap_wakes_when_taps_do_something(board):
+    a = _off_hold_power(board)
+    a.cfg['touch']['tap'] = 'effect'
+    press(a, 4, 100)
+    assert a.power
+
+
+def test_one_lost_poll_does_not_split_a_hold(board):
+    a = board()
+    a.cfg['touch']['tap'] = 'next'
+    a.cfg['touch']['hold'] = 'power'
+    a._touch_cfg()
+    first = a.preset
+    on = [0] * a.bus.npanels
+    on[4] = 0x11
+    off = [0] * a.bus.npanels
+    steps = appmod.HOLD_MS // appmod.TOUCH_POLL_MS + 3
+    frames = [on] * 5 + [off] + [on] * steps + [off] * 3
+    _polls(a, frames)
+    assert not a.power                      # one long hold: power toggled
+    assert a.preset == first                # and no tap ran
 
 
 def test_touch_from_web(board):

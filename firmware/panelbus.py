@@ -48,6 +48,9 @@ FLOOD = 0xFE
 TERMINATOR = 0x40
 PSU_CODE = 1                 # connector-count code of the power supply node
 HOTSWAP = 0xCC               # trailing byte of a bulk pull reply (§8)
+# Status bytes take the values 00, 10..17 and those plus 20 (§6.3): a reply
+# with any of these bits set in a status byte was corrupted on the wire.
+STATUS_NEVER = 0xC8
 
 # global / node commands (§6.1): cmd < 0x80 is SET without reply
 CMD_BRIGHTNESS = 0x04
@@ -394,10 +397,15 @@ class PanelBus:
 
 def touch_status(raw, npanels):
     """Status byte per panel in chunk order from a bulk pull reply, or None
-    if the reply is short. The reply is in layout-string order (§6.3)."""
+    if the reply is short or garbled. The reply is in layout-string order
+    (§6.3)."""
     if not raw or len(raw) < 2 * npanels:
         return None
-    return [raw[2 * k] for k in range(npanels - 1, -1, -1)]
+    st = [raw[2 * k] for k in range(npanels - 1, -1, -1)]
+    for s in st:
+        if s & STATUS_NEVER:
+            return None
+    return st
 
 
 def is_touched(status):

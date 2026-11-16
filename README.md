@@ -150,7 +150,9 @@ from the parameter list.
 
 **Touch**: tap a panel to make the effect react (Ripple, Twinkle, Wander), hold it for 0.8 s to switch the panels off
 and on. Tap and hold can be set to next/previous preset, power, brightness steps or a particular preset — for all panels
-or per panel.
+or per panel. While the panels are off a tap wakes them, unless taps are set to nothing: then only a hold does. A touch
+counts once two polls in a row report it (the bus is polled every 40 ms), so a corrupted poll reply cannot switch the
+wall on.
 
 **Network streams** take over while DDP / E1.31 frames arrive and hand the panels back to the effect 3 s after the
 last frame.
