@@ -212,7 +212,7 @@ def test_hold_toggles_power(board):
     a = board()
     press(a, 4, appmod.HOLD_MS + 50)
     assert not a.power
-    press(a, 4, 50)                 # any touch wakes it up
+    press(a, 4, 100)                # any touch wakes it up
     assert a.power
 
 
@@ -286,6 +286,32 @@ def test_a_tap_wakes_when_taps_do_something(board):
     a.cfg['touch']['tap'] = 'effect'
     press(a, 4, 100)
     assert a.power
+
+
+def test_waking_takes_a_longer_touch_than_a_tap(board):
+    """Phantom taps woke a dark wall: while off, a press needs
+    WAKE_CONFIRM polls, not TOUCH_CONFIRM."""
+    a = _off_hold_power(board)
+    a.cfg['touch']['tap'] = 'next'
+    quiet = [0] * a.bus.npanels
+    on = list(quiet)
+    on[3] = 0x31
+    t = _polls(a, [quiet] + [on] * (appmod.WAKE_CONFIRM - 1) + [quiet] * 3)
+    assert not a.power and a.touches == 0
+    _polls(a, [on] * appmod.WAKE_CONFIRM + [quiet] * 3, t)
+    assert a.power and a.touches == 1
+    assert 'touch: panel 3 (status 313131), wakes' in a.events[-1][2]
+
+
+def test_events_reach_api_info(board):
+    a = board()
+    a.update_state({'effect': 'ripple', 'params': {'auto': 0}})
+    press(a, 4, 100)
+    ev = a.info_json()['events']
+    assert ev and ev[-1].endswith('touch: panel 4 (status 1111)')
+    for k in range(appmod.EVENTS + 5):
+        a._event('x%d' % k)
+    assert len(a.events) == appmod.EVENTS and a.events[-1][2] == 'x%d' % (appmod.EVENTS + 4)
 
 
 def test_one_lost_poll_does_not_split_a_hold(board):
@@ -689,3 +715,76 @@ def test_a_cc_inside_a_poll_reply_does_not_rescan(board):
     a.last_keep = time.ticks_add(time.ticks_ms(), -1000)
     a._poll(time.ticks_ms())
     assert scans == [1]
+
+
+# --- a layout read short stays short unless checked again -----------------------
+
+TWO = bytes.fromhex('e500b20401000040')     # read on the wall: hexagon + triangle of 23
+
+
+def _age(a, ms):
+    a.last_rescan = time.ticks_add(time.ticks_ms(), -ms)
+
+
+def test_a_short_layout_is_checked_again_and_recovered(board):
+    """On the wall a 23-panel assembly was read as 2 panels, twice the same:
+    the other 21 then answered nothing and raised no hot-plug, for hours."""
+    a = board()
+    full, n = a.raw, a.bus.npanels
+    a.bus.reads = [TWO, TWO]
+    a.rescan()
+    assert a.bus.npanels == 2 and a.best == n
+    assert a.verify_ms == appmod.VERIFY_SHORT_MS
+    a._housekeeping(time.ticks_ms())          # not yet due
+    assert a.bus.npanels == 2
+    _age(a, appmod.VERIFY_SHORT_MS)
+    a.bus.reads = [full, full, full]
+    a._housekeeping(time.ticks_ms())
+    assert a.raw == full and a.bus.npanels == n and len(a.engine.ctx.x) == n
+    assert a.recovered == 1 and a.verify_ms == appmod.VERIFY_MS
+    assert any('2 -> %d panels' % n in e[2] for e in a.events)
+
+
+def test_a_check_that_reads_the_same_changes_nothing(board):
+    a = board()
+    eff = a.engine.eff
+    _age(a, appmod.VERIFY_MS)
+    a._housekeeping(time.ticks_ms())
+    assert a.engine.eff is eff and a.recovered == 0 and a.events == []
+    assert time.ticks_diff(time.ticks_ms(), a.last_rescan) < 1000
+
+
+def test_panels_really_removed_are_checked_less_and_less(board):
+    a = board()
+    a.bus.reads = [TWO, TWO]
+    a.rescan()
+    gaps = []
+    for _ in range(7):
+        gaps.append(a.verify_ms)
+        _age(a, a.verify_ms)
+        a.bus.reads = [TWO]
+        a._housekeeping(time.ticks_ms())
+        assert a.bus.npanels == 2
+    assert gaps[:3] == [30000, 60000, 120000] and gaps[-1] == appmod.VERIFY_MS
+
+
+def test_a_noisy_check_does_not_change_the_layout(board):
+    a = board()
+    full, n = a.raw, a.bus.npanels
+    other = bytes([full[0] ^ 0x02]) + full[1:]
+    _age(a, appmod.VERIFY_MS)
+    a.bus.reads = [other, full, full]         # rescan reads it right again
+    a._housekeeping(time.ticks_ms())
+    assert a.raw == full and a.bus.npanels == n and a.bus.adopted == full
+
+
+def test_no_check_while_the_bus_is_silent(board):
+    a = board()
+    a.bus.silent = True
+    a.rescan()
+    a.bus_retry_ms = 10 ** 9
+    _age(a, appmod.VERIFY_MS)
+    called = []
+    a._verify = lambda now: called.append(1)
+    a._housekeeping(time.ticks_ms())
+    assert called == []

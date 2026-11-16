@@ -34,7 +34,7 @@ import e131
 import web
 import wifi
 
-VERSION = '2.0.5'
+VERSION = '2.0.6'
 EIO = 5                # errno: select() failed (ESP32: no memory for it)
 
 IDLE_MS = 300          # silence that counts as idle
@@ -43,10 +43,14 @@ MAX_NOPOLL_MS = 1000   # poll interval while frames stream in
 RESCAN_MS = 5000       # minimum gap between re-enumerations
 TOUCH_POLL_MS = 40     # poll interval while touch actions are configured
 TOUCH_CONFIRM = 2      # polls in a row that make a press (and a release)
+WAKE_CONFIRM = 3       # polls in a row that make a press while the panels are off
 HOLD_MS = 800          # touch longer than this is a hold
 BUS_RETRY_MS = 10000   # retry a silent bus after this long at first,
 BUS_RETRY_MAX_MS = 60000  # then less and less often, up to this
 DEAD_POLLS = 5         # polls in a row without any answer: the bus is lost
+VERIFY_MS = 600000     # enumerate again this often to catch a layout read short,
+VERIFY_SHORT_MS = 30000  # and this often (doubling) while fewer panels answer than before
+EVENTS = 24            # entries kept in the event log (/api/info)
 SAVE_DELAY_MS = 4000   # state.json is written this long after the last change
 HOUSEKEEP_MS = 250
 GC_MS = 2000           # explicit garbage collection interval
@@ -136,7 +140,7 @@ class App:
         self.hold_until = None         # identify
         self.pressed = {}              # chunk -> press time
         self.held = set()              # presses already acted upon
-        self.maybe = {}                # chunk -> (first seen, polls): not yet a press
+        self.maybe = {}                # chunk -> (first seen, status bytes): not yet a press
         self.gone = {}                 # chunk -> polls without touch: not yet a release
         self.touches = 0
         self.off_at = None             # sleep timer
@@ -150,6 +154,10 @@ class App:
         self.dead_polls = 0
         self.garbled = 0               # poll replies dropped as corrupted
         self.layout_rejects = 0        # new layout strings that did not read the same again
+        self.best = 0                  # most panels enumerated since start-up
+        self.verify_ms = VERIFY_MS
+        self.recovered = 0             # short layouts replaced by a later enumeration
+        self.events = []               # (uptime s, text), newest last
         self.last_house = self.last_gc = now
         self.fps = 0.0
         self._fps_t = now
@@ -174,6 +182,14 @@ class App:
     def _log(self, *a):
         if self.verbose:
             print(*a)
+
+    def _event(self, text):
+        """Log, and keep for /api/info: the board usually runs without a
+        console attached, and touches and layout changes need explaining."""
+        self._log(text)
+        self.events.append((_since(time.ticks_ms(), self.boot) // 1000, self.clock_str(), text))
+        if len(self.events) > EVENTS:
+            self.events.pop(0)
 
     # --- bus and layout -------------------------------------------------------
     def _confirmed(self, raw):
@@ -202,17 +218,17 @@ class App:
                 break
             reads.append(r)
         if win is None:
-            self._log('layout: reads disagree, keeping the %d-panel layout: %s'
+            self._event('layout: reads disagree, keeping the %d-panel layout: %s'
                       % (panelbus.count_panels(old), ' / '.join(x.hex() for x in reads)))
             self.layout_rejects += 1
             win = old
         elif len(reads) > 1:
-            self._log('layout: reads disagreed, %d panels confirmed: %s'
+            self._event('layout: reads disagreed, %d panels confirmed: %s'
                       % (panelbus.count_panels(win), ' / '.join(x.hex() for x in reads)))
         if win != last:
             self.bus.adopt(win)
         if win != old:
-            self._log('layout: %d -> %d panels: %s -> %s'
+            self._event('layout: %d -> %d panels: %s -> %s'
                       % (panelbus.count_panels(old), panelbus.count_panels(win), old.hex(), win.hex()))
         return win
 
@@ -234,10 +250,21 @@ class App:
             self.raw = b''
             self.layout = None
             self._rebuild(now)
-            self._log('bus:', e)
+            self._event('bus: %s' % e)
             return False
         self.bus_retry_ms = BUS_RETRY_MS
         self.raw = raw
+        # A layout string can come back short, twice the same, with the rest
+        # of the wall still there: the panels behind the break then answer
+        # nothing, raise no hot-plug, and the wall stays short. Fewer panels
+        # than before are therefore enumerated again (_verify) until they
+        # are back or have stayed away for long.
+        n = self.bus.npanels
+        if n < self.best:
+            self.verify_ms = VERIFY_SHORT_MS
+        else:
+            self.best = n
+            self.verify_ms = VERIFY_MS
         # Free the old layout and effect geometry before computing the new
         # ones, and collect between the steps: with 26 panels the old data,
         # the new and the garbage of the computation did not fit at once.
@@ -262,6 +289,34 @@ class App:
             gc.collect()
             self.engine.restart(now, fade=3, ctx=effects.Ctx(self.bus.npanels))
         return True
+
+    def _verify(self, now):
+        """Enumerate in the background; only a different string, read again
+        (rescan, _confirmed), changes the layout and restarts the effect."""
+        self.last_rescan = now
+        short = self.bus.npanels < self.best
+        t0 = time.ticks_ms()
+        try:
+            raw = self.bus.enumerate()
+        except panelbus.BusError:
+            raw = None              # the polls notice a lost bus on their own
+        ms = _since(time.ticks_ms(), t0)
+        if raw == self.raw:
+            if short:
+                self.verify_ms = min(2 * self.verify_ms, VERIFY_MS)
+            return
+        if raw is not None and self.raw:
+            self.bus.adopt(self.raw)  # until rescan has read it again
+        n = self.bus.npanels
+        self._event('layout check: %s panels answer (%d ms), %d in use'
+                    % (panelbus.count_panels(raw) if raw else 'no', ms, n))
+        if raw is None:
+            return
+        if self.rescan():
+            if self.bus.npanels > n:
+                self.recovered += 1
+            if self.bus.npanels != n:
+                self._event('assembly changed: %d -> %d panels' % (n, self.bus.npanels))
 
     def _rebuild(self, now):
         lc = self.cfg['layout']
@@ -591,7 +646,8 @@ class App:
         touch, a release as many without. Bit errors on the bus flip single
         bits in single replies, at random panels (two at once in one status
         byte read as a touch and woke the wall up); a finger stays for many
-        polls."""
+        polls. Waking the panels takes WAKE_CONFIRM polls: a phantom tap
+        lights up a dark room, a missed one is just tapped again."""
         for i in range(len(status)):
             on = panelbus.is_touched(status[i])
             t0 = self.pressed.get(i)
@@ -599,15 +655,18 @@ class App:
                 if not on:
                     self.maybe.pop(i, None)
                     continue
-                first, seen = self.maybe.get(i, (now, 0))
-                seen += 1
-                if seen < TOUCH_CONFIRM:
+                first, seen = self.maybe.get(i, (now, b''))
+                seen += bytes((status[i],))
+                if len(seen) < (TOUCH_CONFIRM if self.power else WAKE_CONFIRM):
                     self.maybe[i] = (first, seen)
                     continue
                 del self.maybe[i]
                 self.pressed[i] = first
+                was = self.power
                 if self._press(i, now):
                     self.held.add(i)
+                self._event('touch: panel %d (status %s)%s'
+                            % (i, seen.hex(), ', wakes' if self.power and not was else ''))
                 continue
             if on:
                 self.gone.pop(i, None)
@@ -617,6 +676,7 @@ class App:
                         self._run(self._actions(i)[1], i, now)
                     else:                    # taps do nothing: a hold wakes
                         self.set_power(True, now)
+                        self._event('touch: panel %d held, wakes' % i)
                 continue
             missed = self.gone.get(i, 0) + 1
             if missed < TOUCH_CONFIRM:
@@ -846,7 +906,9 @@ class App:
                         'hotplug_replies': getattr(self.bus, 'hotplug_replies', 0),
                         'keepalives': getattr(self.bus, 'keepalives', 0),
                         'garbled_replies': self.garbled,
-                        'layout_rejects': self.layout_rejects}}
+                        'layout_rejects': self.layout_rejects,
+                        'layouts_recovered': self.recovered}}
+        d['events'] = ['%s +%ds %s' % (c or '', t, x) for t, c, x in self.events]
         d['idf_heap'] = idf_heap()
         try:
             d['mem_free'] = gc.mem_free()
@@ -1036,9 +1098,10 @@ class App:
         if panelbus.is_hotplug(r):
             self.dead_polls = 0
             if _since(now, self.last_rescan) >= RESCAN_MS:
+                self._event('hot-plug: %d-byte reply ending %s' % (len(r), r[-6:].hex()))
                 self.rescan()
                 if n != self.bus.npanels:
-                    self._log('assembly changed: %d -> %d panels' % (n, self.bus.npanels))
+                    self._event('assembly changed: %d -> %d panels' % (n, self.bus.npanels))
             return
         # Nothing at all (at most a byte of our own echo) several times in a
         # row: the assembly is gone, not just slow. Enumerate; if that fails
@@ -1048,7 +1111,7 @@ class App:
             if self.dead_polls >= DEAD_POLLS and _since(now, self.last_rescan) >= RESCAN_MS:
                 self.dead_polls = 0
                 if not self.rescan():
-                    self._log('bus lost: no answer to %d polls' % DEAD_POLLS)
+                    self._event('bus lost: no answer to %d polls' % DEAD_POLLS)
                 return
         else:
             self.dead_polls = 0
@@ -1067,8 +1130,11 @@ class App:
             gc.collect()
         if self.bus_error and _since(now, self.last_rescan) >= self.bus_retry_ms:
             if self.rescan():
-                self._log('bus is back: %d panels' % self.bus.npanels)
+                self._event('bus is back: %d panels' % self.bus.npanels)
                 self.engine.restart(now, fade=8)
+        elif (not self.bus_error and not self.streaming and self.hold_until is None
+              and _since(now, self.last_rescan) >= self.verify_ms):
+            self._verify(now)
         if self.off_at is not None and _since(now, self.off_at) >= 0:
             self.off_at = None
             self.set_power(False, now)
