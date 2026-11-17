@@ -1,9 +1,10 @@
 # Build MicroPython for the ESP32 with the LeafBus modules frozen in - on
 # Windows, natively (no WSL). The same image as tools/build_firmware.sh.
 #
-#     powershell -ExecutionPolicy Bypass -File tools\build_firmware.ps1 [-Work <build dir>]
+#     powershell -ExecutionPolicy Bypass -File tools\build_firmware.ps1 [-Chip esp32s3] [-Work <build dir>]
 #
-# Output: dist\leafbus-esp32.bin, flashed by: python tools\deploy.py --flash
+# Output: dist\leafbus-<chip>.bin, flashed by: python tools\deploy.py --flash [--chip esp32s3]
+# -Chip: esp32 (default; firmware/board/LEAFBUS) or esp32s3 (firmware/board/LEAFBUS_S3).
 #
 # Needs git and Python 3.9+ on PATH and ~4 GB of disk; no admin rights.
 # ESP-IDF is cloned into the build directory (default ~\leafbus-build), its
@@ -11,12 +12,12 @@
 # build host; tools\patch_micropython.py replaces the few shell commands of
 # its build rules (see there). Run it from PowerShell or cmd, not Git Bash:
 # ESP-IDF refuses MSYS shells.
-param([string]$Work = "$HOME\leafbus-build")
+param([string]$Work = "$HOME\leafbus-build", [ValidateSet("esp32", "esp32s3")][string]$Chip = "esp32")
 
 $ErrorActionPreference = "Continue"   # native tools write progress to stderr
 $MicroPython = "v1.29.0"
 $Idf = "v5.5.2"
-$Board = "ESP32_GENERIC"
+$Board, $BoardDir = @{ esp32 = "ESP32_GENERIC", "LEAFBUS"; esp32s3 = "ESP32_GENERIC_S3", "LEAFBUS_S3" }[$Chip]
 $Repo = (Resolve-Path "$PSScriptRoot\..").Path -replace '\\', '/'
 
 function Step($what) { Write-Host "== $what" }
@@ -58,7 +59,7 @@ $env:MICROPY_MPYCROSS = "$Work\tools-venv\Scripts\mpy-cross.exe"   # read by mkr
 
 if (-not $env:IDF_TOOLS_PATH) { $env:IDF_TOOLS_PATH = "$HOME\.espressif" }
 Step "ESP-IDF tools in $env:IDF_TOOLS_PATH"
-python esp-idf\tools\idf_tools.py install --targets esp32 required cmake ninja
+python esp-idf\tools\idf_tools.py install --targets $Chip required cmake ninja
 Check "idf_tools install"
 python esp-idf\tools\idf_tools.py install-python-env
 Check "idf_tools install-python-env"
@@ -67,16 +68,16 @@ Check "idf_tools install-python-env"
 Step "build"
 Here "$Work\micropython\ports\esp32"
 $B = "build-$Board-leafbus"
-idf.py -B $B -D MICROPY_BOARD=$Board -D "MICROPY_BOARD_DIR=$Repo/firmware/board/LEAFBUS" `
+idf.py -B $B -D MICROPY_BOARD=$Board -D "MICROPY_BOARD_DIR=$Repo/firmware/board/$BoardDir" `
     -D "MICROPY_FROZEN_MANIFEST=$Repo/firmware/manifest.py" build 2>&1 | Out-File -Encoding utf8 "$Work\build.log"
 if ($LASTEXITCODE -ne 0) { Get-Content "$Work\build.log" -Tail 40; Write-Host "build_firmware: idf.py build failed, log: $Work\build.log"; exit 1 }
 
 New-Item -ItemType Directory -Force "$Repo/dist" | Out-Null
 if (Test-Path "$B\firmware.bin") {
-    Copy-Item "$B\firmware.bin" "$Repo/dist/leafbus-esp32.bin" -Force
+    Copy-Item "$B\firmware.bin" "$Repo/dist/leafbus-$Chip.bin" -Force
 } else {
     python makeimg.py "$B\sdkconfig" "$B\bootloader\bootloader.bin" "$B\partition_table\partition-table.bin" `
-        "$B\micropython.bin" "$Repo/dist/leafbus-esp32.bin" "$Repo/dist/leafbus-esp32.uf2" | Out-Null
+        "$B\micropython.bin" "$Repo/dist/leafbus-$Chip.bin" "$Repo/dist/leafbus-$Chip.uf2" | Out-Null
     Check "makeimg"
 }
-Get-Item "$Repo/dist/leafbus-esp32.bin" | Select-Object FullName, Length
+Get-Item "$Repo/dist/leafbus-$Chip.bin" | Select-Object FullName, Length

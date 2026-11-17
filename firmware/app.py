@@ -894,7 +894,7 @@ class App:
              'fps': round(self.fps, 1), 'source': self.source(),
              'bus_error': self.bus_error, 'time': self.clock_str(),
              'timezone': self.cfg['timezone'], 'touch_polling': self.touch_on,
-             'platform': sys.platform,
+             'platform': sys.platform, 'chip': panelbus.chip(),
              'micropython': '.'.join(str(x) for x in sys.implementation.version[:3]),
              'loop_hz': round(self.loop_rate),
              'errors': self.errors, 'last_error': self.last_error,

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Build MicroPython for the ESP32 with the LeafBus modules frozen in.
 #
-#     tools/build_firmware.sh [build-dir]        (Linux or WSL)
+#     tools/build_firmware.sh [esp32|esp32s3] [build-dir]    (Linux or WSL)
 #
-# Output: dist/leafbus-esp32.bin, flashed by tools/deploy.py --flash.
+# Output: dist/leafbus-<chip>.bin, flashed by tools/deploy.py --flash [--chip esp32s3].
+# esp32 (default): firmware/board/LEAFBUS; esp32s3: firmware/board/LEAFBUS_S3.
 #
 # Needs git, python3 and ~3 GB of disk; no root. ESP-IDF, its toolchain,
 # cmake and ninja are fetched into the build directory (default
@@ -14,10 +15,15 @@ set -euo pipefail
 
 MICROPYTHON=v1.29.0
 IDF=v5.5.2
-BOARD=ESP32_GENERIC
+CHIP="${1:-esp32}"
+case "$CHIP" in
+    esp32) BOARD=ESP32_GENERIC; BOARD_DIR=LEAFBUS ;;
+    esp32s3) BOARD=ESP32_GENERIC_S3; BOARD_DIR=LEAFBUS_S3 ;;
+    *) echo "build_firmware: chip must be esp32 or esp32s3, not $CHIP" >&2; exit 1 ;;
+esac
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-WORK="${1:-$HOME/leafbus-build}"
+WORK="${2:-$HOME/leafbus-build}"
 mkdir -p "$WORK"
 cd "$WORK"
 
@@ -44,26 +50,26 @@ export MICROPY_MPYCROSS="$WORK/tools-venv/bin/mpy-cross"   # read from the envir
 export IDF_TOOLS_PATH="${IDF_TOOLS_PATH:-$HOME/.espressif}"
 PYVER="$(python3 -c 'import sys;print("%d.%d"%sys.version_info[:2])')"
 venv "$IDF_TOOLS_PATH/python_env/idf${IDF:1:3}_py${PYVER}_env"
-python3 esp-idf/tools/idf_tools.py install --targets esp32 required cmake ninja
+python3 esp-idf/tools/idf_tools.py install --targets "$CHIP" required cmake ninja
 python3 esp-idf/tools/idf_tools.py install-python-env
 # shellcheck disable=SC1091
 . esp-idf/export.sh > /dev/null
 
 cd micropython/ports/esp32
-# firmware/board/LEAFBUS: ESP32_GENERIC plus LeafBus memory settings
+# firmware/board/LEAFBUS(_S3): the stock board plus LeafBus settings
 idf.py -B "build-$BOARD-leafbus" \
     -D MICROPY_BOARD="$BOARD" \
-    -D MICROPY_BOARD_DIR="$REPO/firmware/board/LEAFBUS" \
+    -D MICROPY_BOARD_DIR="$REPO/firmware/board/$BOARD_DIR" \
     -D MICROPY_FROZEN_MANIFEST="$REPO/firmware/manifest.py" \
     build
 
 B="build-$BOARD-leafbus"
 mkdir -p "$REPO/dist"
 if [ -f "$B/firmware.bin" ]; then
-    cp "$B/firmware.bin" "$REPO/dist/leafbus-esp32.bin"
+    cp "$B/firmware.bin" "$REPO/dist/leafbus-$CHIP.bin"
 else
     python3 makeimg.py "$B/sdkconfig" "$B/bootloader/bootloader.bin" \
         "$B/partition_table/partition-table.bin" "$B/micropython.bin" \
-        "$REPO/dist/leafbus-esp32.bin" "$REPO/dist/leafbus-esp32.uf2" > /dev/null
+        "$REPO/dist/leafbus-$CHIP.bin" "$REPO/dist/leafbus-$CHIP.uf2" > /dev/null
 fi
-ls -l "$REPO/dist/leafbus-esp32.bin"
+ls -l "$REPO/dist/leafbus-$CHIP.bin"

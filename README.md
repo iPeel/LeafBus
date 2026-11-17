@@ -41,7 +41,9 @@ sequence you can reproduce in an afternoon.
 
 - Nanoleaf Shapes panels with their own power supply (42 V). Verified with 13 Mini Triangles and one Triangle, and
   with assemblies of 20 and 26 Triangles and Mini Triangles.
-- ESP32 (original, e.g. ESP32-D0WD; the S2/S3/C3 need a different GPIO register base, see `firmware/panelbus.py`).
+- ESP32 (original, e.g. ESP32-D0WD), or an ESP32-S3 board such as the LOLIN S3 Mini (2 MB PSRAM, USB-C; image
+  builds, not yet tried on panels). The S2 and C3 need only a build target; their open-drain register is in
+  `firmware/panelbus.py`.
 - One resistor, 1–2 kΩ.
 - Something to reach the panel's DATA and GND pads: a spare linker with wires soldered on, or pogo pins.
 
@@ -69,6 +71,8 @@ edge: 1 m of screened audio cable was enough to garble every byte. The log then 
    powershell -ExecutionPolicy Bypass -File tools\build_firmware.ps1
    ```
    Both build the board in `firmware/board/LEAFBUS` and patch MicroPython first (`tools/patch_micropython.py`).
+   For an ESP32-S3 board add the chip (`firmware/board/LEAFBUS_S3`, output `dist/leafbus-esp32s3.bin`):
+   `tools/build_firmware.sh esp32s3`, or `build_firmware.ps1 -Chip esp32s3`.
 2. Connect the ESP32 by USB and install (`pip install -r requirements-dev.txt` first):
    ```
    python tools/deploy.py --flash
@@ -76,6 +80,16 @@ edge: 1 m of screened audio cable was enough to garble every byte. The log then 
    This writes `dist/leafbus-esp32.bin` with esptool, then uploads `main.py` and the gzipped web UI with
    [mpremote](https://docs.micropython.org/en/latest/reference/mpremote.html). Only the firmware area of the flash is
    written: `config.json`, presets and state on the board survive, so the same command updates a board.
+   **M5Stack Atom Echo** (ESP32-PICO-D4): the image installs and runs (`--baud 115200`: its USB serial chip drops out
+   at 460800; GPIO 16/17 are its flash, so `"uart": {"tx": 26, "rx": 32}` in `config.json` before the first boot),
+   but on the bench **no panel ever answered it**, while the same lead on a plain ESP32 worked at once. The pins
+   checked out down to the registers (open drain, UART routing, clean 1 Mbaud echo); the cause was not found. Not
+   recommended. A board that ran other firmware: `python -m esptool --port COMx erase-flash` first.
+   **ESP32-S3 with native USB** (LOLIN S3 Mini): hold **BOOT (0)**, press **RST**, then
+   `python tools/deploy.py --flash --chip esp32s3 --port <the port that appeared>` (add `--config` the first time).
+   After flashing, MicroPython's own USB port comes up under another name; deploy waits for it and uploads there.
+   Pick pins the board brings out for `uart` in `config.json`, and keep off its USB (19, 20), flash and PSRAM
+   (26–32) and strapping pins (0, 3, 45, 46).
 3. The board resets, finds the panels and starts playing at once — Wi-Fi is not needed for that. Without Wi-Fi
    details it opens an access point **LeafBus-XXXX** (password `leafbus1`): join it, open http://192.168.4.1 and enter
    your network under *Settings → Wi-Fi*. You can also put them in a `config.json` beforehand
@@ -262,6 +276,7 @@ anim.rainbow(bus)
 | `tools/leafbus.py` | host tool, talks to the board over IP: `layout`, `identify`, `send`, `rainbow`                                                                                                                                                            |
 | `tools/build_firmware.sh` / `.ps1` | MicroPython image with the LeafBus modules frozen in (`firmware/manifest.py`): Linux / WSL, or Windows natively |
 | `firmware/board/LEAFBUS/` | the board the image is built for: ESP32_GENERIC with a fixed RAM split between Python and Wi-Fi |
+| `firmware/board/LEAFBUS_S3/` | the same for the ESP32-S3: ESP32_GENERIC_S3 (quad PSRAM, native USB) |
 | `tools/patch_micropython.py` | patches applied to MicroPython before the build: heap reserve, kept heap areas, optional SoftAP, Windows build host |
 | `tools/deploy.py`  | flash the image and/or upload files over USB (settings kept)                                                                                                                                                                              |
 | `tools/simulator.py` | the firmware and web UI on your computer with simulated panels                                                                                                                                                                            |

@@ -189,3 +189,44 @@ def test_a_garbled_line_costs_one_short_window():
     assert time.ticks_diff(time.ticks_ms(), t0) < 600
     assert bus.uart.sent.count(bytes([panelbus.LAYOUT_DETECT])) == 1
     assert 'DATA edges too slow' in str(e.value)
+
+
+# --- chip detection: the open-drain register differs per ESP32 family ------------
+
+@pytest.mark.parametrize('machine, chip, reg', [
+    ('LeafBus ESP32 with ESP32', 'ESP32', 0x3FF44088),
+    ('Generic ESP32 module with ESP32', 'ESP32', 0x3FF44088),
+    ('LeafBus ESP32-S3 with ESP32-S3', 'ESP32S3', 0x60004074),
+    ('Generic ESP32S3 module with ESP32S3', 'ESP32S3', 0x60004074),
+    ('LOLIN_S2_MINI with ESP32-S2FN4R2', None, None),   # exact MCU names only
+    ('LOLIN_S2_MINI with ESP32-S2', 'ESP32S2', 0x3F404074),
+    ('x86_64', None, None),
+])
+def test_chip_from_uname(machine, chip, reg):
+    assert panelbus.chip(machine) == chip
+    assert panelbus.GPIO_PIN0.get(chip) == reg
+
+
+def test_unknown_chip_gets_no_register_write(monkeypatch):
+    import machine
+    monkeypatch.setattr(panelbus, 'GPIO_PIN0_REG', None)
+    monkeypatch.setattr(machine, 'mem32', {}, raising=False)
+    with pytest.raises(panelbus.BusError, match='unknown chip'):
+        panelbus.set_open_drain(17)
+    assert machine.mem32 == {}
+
+
+def test_open_drain_lands_in_the_pins_register(monkeypatch):
+    mem = {}
+
+    class Mem(dict):
+        def __getitem__(self, k):
+            return mem.get(k, 0)
+
+        def __setitem__(self, k, v):
+            mem[k] = v
+    monkeypatch.setattr(panelbus, 'mem32', Mem())
+    monkeypatch.setattr(panelbus, 'GPIO_PIN0_REG', panelbus.GPIO_PIN0['ESP32S3'])
+    panelbus.set_open_drain(17)
+    assert mem == {0x60004074 + 4 * 17: panelbus.PAD_DRIVER}
+    assert panelbus.is_open_drain(17)

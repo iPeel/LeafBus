@@ -32,9 +32,29 @@ except ImportError:          # CPython shim
 BAUD = 1_000_000
 TX_PIN, RX_PIN = 17, 16
 
-# Original ESP32. The S2/S3/C3 families have a different GPIO base address.
-GPIO_PIN0_REG = 0x3FF44088
+# GPIO_PIN0_REG per chip (ESP-IDF soc/gpio_reg.h); bit 2 of GPIO_PINn_REG
+# is the pad driver on all of them. Writing to the wrong address would hit
+# some other peripheral, so an unknown chip gets no open drain at all.
+GPIO_PIN0 = {'ESP32': 0x3FF44088, 'ESP32S2': 0x3F404074,
+             'ESP32S3': 0x60004074, 'ESP32C3': 0x60004074}
 PAD_DRIVER = 1 << 2          # 1 = open drain
+
+
+def chip(machine=None):
+    """'ESP32', 'ESP32S3', ... from os.uname().machine, which ends in
+    'with <MCU name>' ('LeafBus ESP32 with ESP32', 'Generic ESP32S3
+    module with ESP32S3', 'LOLIN_S3_MINI with ESP32-S3')."""
+    if machine is None:
+        try:
+            import os
+            machine = os.uname().machine
+        except (ImportError, AttributeError):
+            return None
+    mcu = machine.rsplit(' with ', 1)[-1].upper().replace('-', '')
+    return mcu if mcu in GPIO_PIN0 else None
+
+
+GPIO_PIN0_REG = GPIO_PIN0.get(chip())
 
 # frame types (PROTOCOL.md §4.1)
 ROOT_DETECT = 0x00
@@ -75,6 +95,9 @@ class BusError(Exception):
 def set_open_drain(pin):
     """Switch the pad to open drain while keeping the UART routing.
     Must run after UART(...): UART initialisation clears the bit."""
+    if GPIO_PIN0_REG is None:
+        raise BusError('open drain: unknown chip %r, add its GPIO_PIN0_REG to '
+                       'panelbus.GPIO_PIN0' % chip())
     mem32[GPIO_PIN0_REG + 4 * pin] |= PAD_DRIVER
 
 
@@ -104,8 +127,8 @@ class PanelBus:
         if open_drain:
             set_open_drain(tx)
             if not is_open_drain(tx):
-                raise BusError('open-drain bit did not stick: check '
-                               'GPIO_PIN0_REG for your ESP32 variant')
+                raise BusError('open-drain bit did not stick on GPIO%d (%s): '
+                               'check panelbus.GPIO_PIN0' % (tx, chip()))
         self.npanels = 1
         self.nodes = []
         self.layout_unstable = False

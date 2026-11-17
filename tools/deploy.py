@@ -2,6 +2,7 @@
 """Put the firmware on a board over USB.
 
     python tools/deploy.py --flash [--port COM5]     LeafBus MicroPython image + files
+    python tools/deploy.py --flash --chip esp32s3    the same on an ESP32-S3 board
     python tools/deploy.py --frozen [--port COM5]    files only, board already flashed
     python tools/deploy.py [--port COM5] [--source]  stock MicroPython, modules as files
 
@@ -11,6 +12,11 @@ LeafBus modules frozen in: they run from flash instead of taking ~70 kB of
 RAM, which the Wi-Fi and TCP stack need for the web interface to stay
 reachable. Only the firmware area is written; the filesystem with
 config.json, presets and state is kept.
+
+ESP32-S3 boards with native USB (e.g. LOLIN S3 Mini): hold BOOT (0), press
+RST, then run --flash --chip esp32s3 on the port that appears. After the
+reset MicroPython's own USB port appears under another name; the upload
+waits for it.
 
 Without --flash/--frozen the modules are copied as files, precompiled to
 .mpy (or .py with --source) for stock MicroPython. That runs the lights
@@ -35,10 +41,14 @@ import time
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 FW = os.path.join(ROOT, 'firmware')
-IMAGE = os.path.join(ROOT, 'dist', 'leafbus-esp32.bin')
+# chip: image built by tools/build_firmware, offset of its first byte (the
+# bootloader sits at 0x1000 on the original ESP32, at 0 on the S3)
+CHIPS = {'esp32': ('leafbus-esp32.bin', '0x1000'),
+         'esp32s3': ('leafbus-esp32s3.bin', '0x0')}
+ESPRESSIF_VID = 0x303A
+USB_SERIAL_JTAG_PID = 0x1001   # the S3's built-in USB, used by its ROM bootloader
 MODULES = ['panelbus', 'geometry', 'effects', 'config', 'wifi', 'web', 'ddp',
            'e131', 'anim', 'app']
-FLASH_OFFSET = '0x1000'      # original ESP32: bootloader, partitions, app
 
 
 def tool(name):
@@ -61,34 +71,63 @@ def tool(name):
     return exe
 
 
-def flash(port, image):
+def flash(port, image, chip='esp32', baud=460800):
     if not os.path.exists(image):
-        sys.exit('deploy: %s missing; build it with tools/build_firmware.sh' % image)
+        sys.exit('deploy: %s missing; build it with tools/build_firmware.ps1 / .sh%s'
+                 % (image, '' if chip == 'esp32' else ' (chip %s)' % chip))
+    offset = CHIPS[chip][1]
     print('flashing %s (%d kB) at %s; the filesystem is not touched'
-          % (os.path.basename(image), os.path.getsize(image) // 1024, FLASH_OFFSET))
-    cmd = [sys.executable, '-m', 'esptool', '--chip', 'esp32']
+          % (os.path.basename(image), os.path.getsize(image) // 1024, offset))
+    cmd = [sys.executable, '-m', 'esptool', '--chip', chip]
     if port:
         cmd += ['--port', port]
-    subprocess.run(cmd + ['--baud', '460800', 'write_flash', '-z', FLASH_OFFSET, image],
+    subprocess.run(cmd + ['--baud', str(baud), 'write_flash', '-z', offset, image],
                    check=True)
     time.sleep(3)     # first boot after flashing
+
+
+def micropython_port(old, timeout=20):
+    """After flashing a native-USB board: the port MicroPython's own USB
+    comes up on (the ROM bootloader's USB-Serial-JTAG port goes away)."""
+    from serial.tools import list_ports
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        mine = [p.device for p in list_ports.comports()
+                if p.vid == ESPRESSIF_VID and p.pid != USB_SERIAL_JTAG_PID]
+        if len(mine) == 1:
+            if mine[0] != old:
+                print('MicroPython came up on %s' % mine[0])
+            return mine[0]
+        time.sleep(0.5)
+    if old and old in [p.device for p in list_ports.comports()]:
+        return old
+    sys.exit('deploy: no MicroPython USB port appeared; reset the board and run\n'
+             '        python tools/deploy.py --frozen --chip esp32s3 --port <its port>')
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--port', help='serial port (default: auto-detect)')
-    ap.add_argument('--flash', nargs='?', const=IMAGE, metavar='IMAGE',
-                    help='write the LeafBus MicroPython image first (default %(const)s)')
+    ap.add_argument('--flash', nargs='?', const='', metavar='IMAGE',
+                    help='write the LeafBus MicroPython image first '
+                         '(default dist/leafbus-<chip>.bin)')
+    ap.add_argument('--chip', choices=sorted(CHIPS), default='esp32',
+                    help='board family (default %(default)s)')
     ap.add_argument('--frozen', action='store_true',
                     help='board runs the LeafBus image: upload main.py and the UI only')
     ap.add_argument('--source', action='store_true', help='copy .py instead of .mpy')
     ap.add_argument('--config', help='also upload this file as config.json')
+    ap.add_argument('--baud', type=int, default=460800,
+                    help='flashing speed (default %(default)s; M5Stack Atom: 115200)')
     a = ap.parse_args()
-    frozen = a.frozen or bool(a.flash)
+    flashing = a.flash is not None
+    frozen = a.frozen or flashing
 
-    if a.flash:
-        flash(a.port, a.flash)
+    if flashing:
+        flash(a.port, a.flash or os.path.join(ROOT, 'dist', CHIPS[a.chip][0]), a.chip, a.baud)
+        if a.chip != 'esp32':
+            a.port = micropython_port(a.port)
 
     mpremote = tool('mpremote')
     conn = ['connect', a.port] if a.port else []
