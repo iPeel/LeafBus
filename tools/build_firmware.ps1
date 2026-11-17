@@ -58,6 +58,16 @@ if (-not (Test-Path tools-venv\Scripts\mpy-cross.exe)) {
 $env:MICROPY_MPYCROSS = "$Work\tools-venv\Scripts\mpy-cross.exe"   # read by mkrules.cmake
 
 if (-not $env:IDF_TOOLS_PATH) { $env:IDF_TOOLS_PATH = "$HOME\.espressif" }
+# components the S3 build fetches (TinyUSB, ...): cached in the build
+# directory; the default under %LOCALAPPDATA% failed with "git init --bare"
+if (-not $env:IDF_COMPONENT_CACHE_PATH) { $env:IDF_COMPONENT_CACHE_PATH = "$Work\component-cache" }
+# Git for Windows writes CRLF on checkout (core.autocrlf=true, and core.eol
+# "native" for repositories that mark their files as text, as TinyUSB does);
+# the component manager then finds a git-fetched component "corrupted" (hash
+# mismatch). LF for this build only.
+$env:GIT_CONFIG_COUNT = "2"
+$env:GIT_CONFIG_KEY_0 = "core.autocrlf"; $env:GIT_CONFIG_VALUE_0 = "false"
+$env:GIT_CONFIG_KEY_1 = "core.eol"; $env:GIT_CONFIG_VALUE_1 = "lf"
 Step "ESP-IDF tools in $env:IDF_TOOLS_PATH"
 python esp-idf\tools\idf_tools.py install --targets $Chip required cmake ninja
 Check "idf_tools install"
