@@ -207,6 +207,23 @@ def test_chip_from_uname(machine, chip, reg):
     assert panelbus.GPIO_PIN0.get(chip) == reg
 
 
+@pytest.mark.parametrize('chip, uart_id', [('ESP32', 1), ('ESP32S3', 2), (None, 1)])
+def test_bus_uart_avoids_the_iomux_tx_pin(monkeypatch, chip, uart_id):
+    # the S3's UART1 and the ESP32's UART2 own GPIO17 in the IO_MUX, a path
+    # that ignores the open-drain bit
+    opened = []
+
+    class RecUART:
+        def __init__(self, uid, **kw):
+            opened.append((uid, kw['tx'], kw['rx']))
+    monkeypatch.setattr(panelbus, 'UART', RecUART)
+    monkeypatch.setattr(panelbus, 'chip', lambda: chip)
+    monkeypatch.setattr(panelbus, 'set_open_drain', lambda pin: None)
+    monkeypatch.setattr(panelbus, 'is_open_drain', lambda pin: True)
+    panelbus.PanelBus(keepalive=False)
+    assert opened == [(uart_id, 17, 16)]
+
+
 def test_unknown_chip_gets_no_register_write(monkeypatch):
     import machine
     monkeypatch.setattr(panelbus, 'GPIO_PIN0_REG', None)

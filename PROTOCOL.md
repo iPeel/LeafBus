@@ -26,7 +26,7 @@ documentation, source code or confidential material was used, and no protected m
 From "panels powered" to "panels lit in a color of your choice":
 
 1. Connect the bus master to a panel's DATA pad through an **open-drain**
-   output with a 1–2 kΩ pull-up to 3.3 V, and share GND (section 3).
+   output with a ~3 kΩ pull-up to 3.3 V, and share GND (section 3.1).
 2. Open the UART at **1 000 000 baud, 8N1**.
 3. Send the single byte `00` (*root side detect*). No reply. Wait ~20 ms.
 4. Send the single byte `80` (*layout detect*). Read until the terminator
@@ -74,7 +74,7 @@ flowchart LR
         GNDE["GND"]
     end
     V33["+3.3 V"]
-    R["1–2 kΩ"]
+    R["~3 kΩ"]
     subgraph Panel
         DATA["DATA"]
         GNDP["GND"]
@@ -92,9 +92,18 @@ the reference build uses.
 The pull-up must be external and strong: an internal ~45 kΩ pull-up cannot give clean edges at 1 Mbaud. Verify by
 transmitting `55 AA 55 AA 0F F0` and comparing the echo — 20 of 20 clean echoes means the line is usable.
 
+It must not be too strong either: a panel pulls DATA down only weakly, so against a stiff pull-up its reply stops short
+of logic 0. With a 1–2 kΩ pull-up an original ESP32 (revision 1.1) read 23 panels, while an ESP32 revision 3.1 (and
+probably an ESP32-PICO-D4) on the same lead heard its own echo and never a reply — the push-pull symptom above,
+although TX was open drain and the panels obeyed every color frame. With 3 kΩ the revision 3.1 board read all 23 panels
+and echoed 50 of 50 test patterns cleanly. Use ~3 kΩ (2.2–3.3 kΩ).
+
 On an ESP32 the pad driver bit is set after the UART is initialised (initialising the UART clears it):
 `GPIO_PINn_REG |= (1 << 2)` with
-`GPIO_PIN0_REG = 0x3FF44088` on the original ESP32 (`firmware/panelbus.py`).
+`GPIO_PIN0_REG = 0x3FF44088` on the original ESP32 (`firmware/panelbus.py`). The bit acts only on a signal routed
+through the GPIO matrix: given a UART's own IO_MUX pin, ESP-IDF connects it directly and the pad stays push-pull although
+the bit reads back as set. GPIO17 is UART1's own TX pin on the ESP32-S3, so the S3 drives the bus from UART2 (UART2
+owns GPIO17 on the original ESP32, which uses UART1).
 
 ## 4. Link layer
 

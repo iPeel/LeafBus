@@ -35,7 +35,7 @@
     <line x1="620" y1="240" x2="620" y2="262"/>
   </g>
   <circle cx="560" cy="177" r="3"/><circle cx="620" cy="177" r="3"/>
-  <text x="634" y="224">1–2 kΩ</text>
+  <text x="634" y="224">~3 kΩ</text>
   <text x="620" y="278" text-anchor="middle" font-weight="bold">+3.3 V</text>
   <!-- panel side, same pad order as the connector on the left -->
   <rect x="700" y="90" width="40" height="110" rx="4" fill="#f6c343" stroke="#333"/>

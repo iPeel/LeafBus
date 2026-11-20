@@ -41,10 +41,11 @@ sequence you can reproduce in an afternoon.
 
 - Nanoleaf Shapes panels with their own power supply (42 V). Verified with 13 Mini Triangles and one Triangle, and
   with assemblies of 20 and 26 Triangles and Mini Triangles.
-- ESP32 (original, e.g. ESP32-D0WD), or an ESP32-S3 board such as the LOLIN S3 Mini (2 MB PSRAM, USB-C; image
-  builds, not yet tried on panels). The S2 and C3 need only a build target; their open-drain register is in
+- ESP32 (original, e.g. ESP32-D0WD; verified on revisions 1.1 and 3.1), or an ESP32-S3 board such as the LOLIN S3
+  Mini (2 MB PSRAM, USB-C; the bus runs on its UART2, see PROTOCOL.md §3.1). The S2 and C3 need only a build target; their open-drain register is in
   `firmware/panelbus.py`.
-- One resistor, 1–2 kΩ.
+- One resistor, ~3 kΩ (2.2–3.3 kΩ). A stronger pull-up can hide the panels' replies from newer ESP32s: the log says
+  `echo fine, no panel answers` although the panels show every color (PROTOCOL.md §3.1).
 - Something to reach the panel's DATA and GND pads: a spare linker with wires soldered on, or pogo pins.
 
 ![Wiring](docs/wiring.svg)
@@ -82,9 +83,8 @@ edge: 1 m of screened audio cable was enough to garble every byte. The log then 
    written: `config.json`, presets and state on the board survive, so the same command updates a board.
    **M5Stack Atom Echo** (ESP32-PICO-D4): the image installs and runs (`--baud 115200`: its USB serial chip drops out
    at 460800; GPIO 16/17 are its flash, so `"uart": {"tx": 26, "rx": 32}` in `config.json` before the first boot),
-   but on the bench **no panel ever answered it**, while the same lead on a plain ESP32 worked at once. The pins
-   checked out down to the registers (open drain, UART routing, clean 1 Mbaud echo); the cause was not found. Not
-   recommended. A board that ran other firmware: `python -m esptool --port COMx erase-flash` first.
+   but with a 1–2 kΩ pull-up **no panel ever answered it**, while the same lead on an older ESP32 worked. A newer
+   ESP32 behaved the same until the pull-up went up to 3 kΩ (see Hardware); the Echo was not tried again with 3 kΩ. A board that ran other firmware: `python -m esptool --port COMx erase-flash` first.
    **ESP32-S3 with native USB** (LOLIN S3 Mini): hold **BOOT (0)**, press **RST**, then
    `python tools/deploy.py --flash --chip esp32s3 --port <the port that appeared>` (add `--config` the first time).
    After flashing, MicroPython's own USB port comes up under another name; deploy waits for it and uploads there.

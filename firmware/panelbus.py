@@ -8,7 +8,8 @@ Wiring (PROTOCOL.md §3):
 
     ESP32 TX (open drain) --+---- DATA pad of a panel
     ESP32 RX ---------------+
-    1-2 kOhm pull-up from DATA to +3.3 V
+    ~3 kOhm pull-up from DATA to +3.3 V (PROTOCOL.md §3.1: much stronger
+    and a panel's reply may not reach logic 0 on newer ESP32s)
     ESP32 GND --------------- panel GND
     the 42 V supply pad is left alone
 
@@ -55,6 +56,14 @@ def chip(machine=None):
 
 
 GPIO_PIN0_REG = GPIO_PIN0.get(chip())
+
+# UART per chip whose TX reaches the pin through the GPIO matrix. ESP-IDF
+# connects a UART straight to its own IO_MUX pin when it is asked for that
+# pin, and that path ignores the open-drain bit: TX then holds DATA high and
+# no reply ever arrives, while the echo looks fine. GPIO17 is UART2's own TX
+# pin on the ESP32 and UART1's on the S3 (and the S2, which has no third
+# UART: pick another TX pin there).
+UART_ID = {'ESP32': 1, 'ESP32S2': 1, 'ESP32S3': 2, 'ESP32C3': 1}
 
 # frame types (PROTOCOL.md §4.1)
 ROOT_DETECT = 0x00
@@ -121,8 +130,10 @@ def chunk(r, g, b, w=0, transition=1):
 
 class PanelBus:
     def __init__(self, tx=TX_PIN, rx=RX_PIN, baud=BAUD, open_drain=True,
-                 keepalive=True):
-        self.uart = UART(1, baudrate=baud, bits=8, parity=None, stop=1,
+                 keepalive=True, uart_id=None):
+        if uart_id is None:
+            uart_id = UART_ID.get(chip(), 1)
+        self.uart = UART(uart_id, baudrate=baud, bits=8, parity=None, stop=1,
                          tx=tx, rx=rx, rxbuf=1024, timeout=50)
         if open_drain:
             set_open_drain(tx)
@@ -287,7 +298,10 @@ class PanelBus:
             # is not: on a long or heavy cable lone 1 bits never come back
             return ('own echo garbled, sent %s read %s: DATA edges too slow - '
                     'long cable or weak pull-up' % (sent.hex(), self.last_echo.hex()))
-        return 'echo fine, no panel answers: panel power? GND shared? DATA pad?'
+        # the panels may answer and not reach logic 0: they pull DATA down
+        # weakly, so a strong pull-up hides every reply (PROTOCOL.md §3.1)
+        return ('echo fine, no panel answers: panel power? GND shared? DATA pad? '
+                'pull-up too strong (use ~3 kOhm)?')
 
     @staticmethod
     def parse_node(b):
@@ -497,7 +511,8 @@ def line_check(bus, tries=20):
         bus.last_tx = time.ticks_ms()
     print('clean echo: %d/%d' % (ok, tries))
     if ok < tries:
-        print('-> lower the pull-up (1 kOhm) or shorten the wires')
+        print('-> shorten the wires, or lower the pull-up (not below 2.2 kOhm: '
+              'the panels must still pull DATA to logic 0)')
     return ok == tries
 
 
